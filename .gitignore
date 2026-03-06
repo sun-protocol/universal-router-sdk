@@ -1,0 +1,9 @@
+node_modules
+build
+.env
+cache
+out/
+dist/
+
+_*
+private

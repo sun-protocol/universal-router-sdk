@@ -1,0 +1,60 @@
+{
+  "name": "@sun-protocol/universal-router-sdk",
+  "version": "1.0.1",
+  "description": "Universal Router SDK for TypeScript",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "publish:beta": "npm publish --tag beta --access public",
+    "publish:latest": "npm publish --access public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "author": "Sun Protocol <gummy780j@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sun-protocol/universal-router-sdk"
+  },
+  "homepage": "https://github.com/sun-protocol/universal-router-sdk",
+  "bugs": "https://github.com/sun-protocol/universal-router-sdk/issues",
+  "keywords": [
+    "universal-router",
+    "tron",
+    "swap",
+    "dex",
+    "sdk",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@pancakeswap/swap-sdk-core": "^1.1.0",
+    "@sun-protocol/permit2-sdk": "^1.0.0",
+    "decimal.js": "^10.6.0",
+    "tronweb": "^6.0.4",
+    "viem": "^2.37.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.0.0"
+  }
+}

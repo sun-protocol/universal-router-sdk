@@ -1,0 +1,192 @@
+export const MixedQuoterAbi = [
+  {
+    type: 'constructor',
+    inputs: [
+      { name: '_factoryV3', type: 'address', internalType: 'address' },
+      { name: '_factoryV2', type: 'address', internalType: 'address' },
+      { name: '_factoryStable', type: 'address', internalType: 'address' },
+      { name: '_WETH9', type: 'address', internalType: 'address' },
+      { name: '_clQuoter', type: 'address', internalType: 'contract ICLQuoter' },
+      { name: '_binQuoter', type: 'address', internalType: 'contract IBinQuoter' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'WETH9',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'binQuoter',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'contract IBinQuoter' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'clQuoter',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'contract ICLQuoter' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'factoryStable',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'factoryV2',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'factoryV3',
+    inputs: [],
+    outputs: [{ name: '', type: 'address', internalType: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'multicall',
+    inputs: [{ name: 'data', type: 'bytes[]', internalType: 'bytes[]' }],
+    outputs: [{ name: 'results', type: 'bytes[]', internalType: 'bytes[]' }],
+    stateMutability: 'payable',
+  },
+  {
+    type: 'function',
+    name: 'pancakeV3SwapCallback',
+    inputs: [
+      { name: 'amount0Delta', type: 'int256', internalType: 'int256' },
+      { name: 'amount1Delta', type: 'int256', internalType: 'int256' },
+      { name: 'data', type: 'bytes', internalType: 'bytes' },
+    ],
+    outputs: [],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'quoteExactInputSingleStable',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        internalType: 'struct IMixedQuoter.QuoteExactInputSingleStableParams',
+        components: [
+          { name: 'tokenIn', type: 'address', internalType: 'address' },
+          { name: 'tokenOut', type: 'address', internalType: 'address' },
+          { name: 'amountIn', type: 'uint256', internalType: 'uint256' },
+          { name: 'flag', type: 'uint256', internalType: 'uint256' },
+        ],
+      },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256', internalType: 'uint256' },
+      { name: 'gasEstimate', type: 'uint256', internalType: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'quoteExactInputSingleV2',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        internalType: 'struct IMixedQuoter.QuoteExactInputSingleV2Params',
+        components: [
+          { name: 'tokenIn', type: 'address', internalType: 'address' },
+          { name: 'tokenOut', type: 'address', internalType: 'address' },
+          { name: 'amountIn', type: 'uint256', internalType: 'uint256' },
+        ],
+      },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256', internalType: 'uint256' },
+      { name: 'gasEstimate', type: 'uint256', internalType: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'quoteExactInputSingleV3',
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        internalType: 'struct IMixedQuoter.QuoteExactInputSingleV3Params',
+        components: [
+          { name: 'tokenIn', type: 'address', internalType: 'address' },
+          { name: 'tokenOut', type: 'address', internalType: 'address' },
+          { name: 'amountIn', type: 'uint256', internalType: 'uint256' },
+          { name: 'fee', type: 'uint24', internalType: 'uint24' },
+          { name: 'sqrtPriceLimitX96', type: 'uint160', internalType: 'uint160' },
+        ],
+      },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256', internalType: 'uint256' },
+      { name: 'sqrtPriceX96After', type: 'uint160', internalType: 'uint160' },
+      { name: 'initializedTicksCrossed', type: 'uint32', internalType: 'uint32' },
+      { name: 'gasEstimate', type: 'uint256', internalType: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'quoteMixedExactInput',
+    inputs: [
+      { name: 'paths', type: 'address[]', internalType: 'address[]' },
+      { name: 'actions', type: 'bytes', internalType: 'bytes' },
+      { name: 'params', type: 'bytes[]', internalType: 'bytes[]' },
+      { name: 'amountIn', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256', internalType: 'uint256' },
+      { name: 'gasEstimate', type: 'uint256', internalType: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'quoteMixedExactInputSharedContext',
+    inputs: [
+      { name: 'paths', type: 'address[]', internalType: 'address[]' },
+      { name: 'actions', type: 'bytes', internalType: 'bytes' },
+      { name: 'params', type: 'bytes[]', internalType: 'bytes[]' },
+      { name: 'amountIn', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [
+      { name: 'amountOut', type: 'uint256', internalType: 'uint256' },
+      { name: 'gasEstimate', type: 'uint256', internalType: 'uint256' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  { type: 'error', name: 'INVALID_ADDRESS', inputs: [] },
+  { type: 'error', name: 'INVALID_SWAP_DIRECTION', inputs: [] },
+  { type: 'error', name: 'InputLengthMismatch', inputs: [] },
+  { type: 'error', name: 'InvalidPath', inputs: [] },
+  { type: 'error', name: 'InvalidPoolKeyCurrency', inputs: [] },
+  { type: 'error', name: 'NoActions', inputs: [] },
+  {
+    type: 'error',
+    name: 'SafeCastOverflowedUintDowncast',
+    inputs: [
+      { name: 'bits', type: 'uint8', internalType: 'uint8' },
+      { name: 'value', type: 'uint256', internalType: 'uint256' },
+    ],
+  },
+  {
+    type: 'error',
+    name: 'SafeCastOverflowedUintToInt',
+    inputs: [{ name: 'value', type: 'uint256', internalType: 'uint256' }],
+  },
+  { type: 'error', name: 'UnsupportedAction', inputs: [{ name: 'action', type: 'uint256', internalType: 'uint256' }] },
+] as const
