@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2021",
+    "module": "commonjs",
+    "lib": ["es2021"],
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "rootDir": ".",
+    "outDir": "./dist"
+  },
+  "include": ["v4-swap/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
