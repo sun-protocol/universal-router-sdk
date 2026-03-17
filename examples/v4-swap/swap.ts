@@ -1,55 +1,9 @@
 import { TradePlanner, parseRouteAPIResponse, type ParseRouteOptions } from '@sun-protocol/universal-router-sdk'
 import { AllowanceTransfer, type PermitSingleWithSignature } from '@sun-protocol/permit2-sdk'
 import * as dotenv from 'dotenv'
-import { TronWeb } from 'tronweb'
+import { tronWebNile, tronWebMainnet, NILE, MAINNET, getSwapConstants, toEvmHex, toBase58 } from './helper'
 
-dotenv.config()
-
-const tronWeb = new TronWeb(
-  'https://nile.trongrid.io', // fullNode
-  'https://nile.trongrid.io',
-  'https://nile.trongrid.io',
-  process.env.PRIVATE_KEY ?? ''
-)
-
-// ---------------------------------------------------------------------------
-// Network-level swap/router constants (Universal Router + Permit2)
-// ---------------------------------------------------------------------------
-
-export interface NetworkConstants {
-  trx: string
-}
-
-export interface SwapConstants extends NetworkConstants {
-  universalRouter: string
-  permit2: string
-  routerApiUrl: string
-}
-
-export const MAINNET: SwapConstants = {
-  universalRouter: 'TSJEtPuqHpvSaVnSwvCsngaeBxrGUzp95Q',
-  permit2: 'TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9',
-  routerApiUrl: 'https://rot.endjgfsv.link',
-  trx: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb',
-}
-
-export const NILE: SwapConstants = {
-  universalRouter: 'TEgq4237arNE7jX74KCDkc1MXdZeWNkGVj',
-  permit2: 'TYQuuhGbEMxF7nZxUHV3uHJxAVVAegNU9h',
-  routerApiUrl: 'https://tnrouter.endjgfsv.link',
-  trx: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb',
-}
-
-function getSwapConstants(network: string): SwapConstants {
-  if (network === 'mainnet') {
-    return MAINNET
-  } else if (network === 'nile') {
-    return NILE
-  } else {
-    throw new Error(`Swap is not supported on network "${network}". Supported: mainnet, nile`)
-  }
-}
-
+const tronWeb = tronWebNile
 // ---------------------------------------------------------------------------
 // Router API
 // ---------------------------------------------------------------------------
@@ -166,6 +120,14 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
     slippage,
   } as ParseRouteOptions)
 
+  //prettify swapTradeRoute
+  console.log(
+    'swapTradeRoute',
+    JSON.stringify(swapTradeRoute, (key, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
+  )
+
+  throw new Error('test')
+
   const tradePlanner = new TradePlanner([swapTradeRoute], debugMode, {
     permitOptions: {
       permitEnabled: !!permitSingleWithSignature,
@@ -250,20 +212,6 @@ export const approveToPermit2 = async (permit2Address: string, tokenAddress: str
     //sleep
     await new Promise(resolve => setTimeout(resolve, 3000))
   }
-}
-
-// ---------------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------------
-
-function toEvmHex(addr: string): string {
-  const hex = tronWeb.address.toHex(addr)
-  const body = (hex.startsWith('41') ? hex.slice(2) : hex.replace(/^0x/, '')).slice(-40)
-  return '0x' + body
-}
-
-export function toBase58(addr: string): string {
-  return TronWeb.address.fromHex(addr)
 }
 
 if (require.main === module) {
