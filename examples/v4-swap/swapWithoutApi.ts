@@ -17,11 +17,56 @@ import {
   getPoolFlag,
 } from '@sun-protocol/universal-router-sdk'
 import { AllowanceTransfer, type PermitSingleWithSignature } from '@sun-protocol/permit2-sdk'
-import { tronWebNile, tronWebMainnet, NILE, MAINNET, getSwapConstants, toEvmHex, SwapConstants } from './helper'
+import {
+  tronWebNile,
+  tronWebMainnet,
+  NILE,
+  MAINNET,
+  getSwapConstants,
+  toBase58,
+  toEvmHex,
+  SwapConstants,
+} from './helper'
 import { TRX_ADDRESS, TESTNET_WTRX_ADDRESS, MAINNET_WTRX_ADDRESS } from '@sun-protocol/universal-router-sdk'
-import { approveToPermit2 } from './swap'
 
-const tronWeb = tronWebNile
+const approveToPermit2 = async (
+  tronWeb: typeof tronWebNile,
+  permit2Address: string,
+  tokenAddress: string,
+  amount: bigint
+) => {
+  if (tokenAddress.startsWith('0x')) {
+    tokenAddress = toBase58(tokenAddress)
+  }
+
+  const approveTx = await tronWeb.transactionBuilder.triggerSmartContract(
+    tokenAddress,
+    'approve(address,uint256)',
+    {
+      feeLimit: 100000000,
+      callValue: 0,
+    },
+    [
+      {
+        type: 'address',
+        value: toEvmHex(permit2Address),
+      },
+      {
+        type: 'uint256',
+        value: amount.toString(),
+      },
+    ]
+  )
+
+  if (approveTx.result && approveTx.result.result) {
+    const signed = await tronWeb.trx.sign(approveTx.transaction)
+    const res = await tronWeb.trx.sendRawTransaction(signed)
+    console.log('✅ Approve transaction sent', res)
+    await new Promise(resolve => setTimeout(resolve, 3000))
+  } else {
+    throw new Error('approve transaction build failed')
+  }
+}
 
 export interface Path {
   poolVersion: PoolVersion
@@ -54,6 +99,7 @@ export async function swapWithoutApi(params: SwapWithoutApiParams): Promise<stri
   const slippageBps = params.slippageBps ?? 50
   const submit = params.submit ?? true
 
+  const tronWeb = network === 'nile' ? tronWebNile : tronWebMainnet
   const constants: SwapConstants = getSwapConstants(network)
   const isTestnet = network === 'nile'
   const debugMode = true
@@ -67,9 +113,16 @@ export async function swapWithoutApi(params: SwapWithoutApiParams): Promise<stri
   let permitSingleWithSignature: PermitSingleWithSignature | undefined
   if (fromToken !== constants.trx) {
     if (submit) {
-      await approveToPermit2(constants.permit2, fromToken, BigInt(amountIn))
+      try {
+        await approveToPermit2(tronWeb, constants.permit2, fromToken, BigInt(amountIn))
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        throw new Error(
+          `approveToPermit2 failed (network=${network}, token=${fromToken}, permit2=${constants.permit2}): ${msg}`
+        )
+      }
     }
-    const permit2 = new AllowanceTransfer(tronWeb, constants.permit2, true)
+    const permit2 = new AllowanceTransfer(tronWeb, constants.permit2, isTestnet)
     permitSingleWithSignature = await permit2.generatePermitSignature(
       {
         owner: tronWeb.defaultAddress.base58 as string,
@@ -221,8 +274,9 @@ export async function swapWithoutApi(params: SwapWithoutApiParams): Promise<stri
 
       return result.txid
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
       console.error('Transaction failed', error)
-      throw new Error('Transaction failed')
+      throw new Error(`Transaction failed (network=${network}, router=${constants.universalRouter}): ${msg}`)
     }
   }
 
@@ -258,28 +312,28 @@ export async function trxWtrxLoop(
 if (require.main === module) {
   ;(async () => {
     console.log('============================================================')
-    console.log(' Universal Router Swap (manual route, NILE testnet)')
+    console.log(' Universal Router Swap (manual route)')
     console.log('============================================================')
     console.log('')
 
     try {
       const TRX_ADDRESS = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb'
-      const USDT_ADDRESS = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
-
-      const amountIn = '1000000' // Matches the amountIn shown in your swap.ts logs
+      const USDT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+      const CURRENCY1_ADDRESS = 'TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz'
+      const amountIn = '1000000' // 1 USDT (6 decimals)
 
       const paths: Path[] = [
         {
           poolVersion: PoolVersion.V4,
           tokenIn: USDT_ADDRESS, // input: USDT
-          tokenOut: TRX_ADDRESS, // output: TRX
-          fee: '3000',
+          tokenOut: CURRENCY1_ADDRESS, // output: TRX
+          fee: '100',
           poolKey: {
-            token0: TRX_ADDRESS, // currency0 (will be sorted so TRX < USDT)
-            token1: USDT_ADDRESS, // currency1
+            token0: USDT_ADDRESS, // currency0 (will be sorted so TRX < USDT)
+            token1: CURRENCY1_ADDRESS, // currency1
             hooks: TRX_ADDRESS, // Matches swap.ts logs (TRX / zero-address hook)
-            fee: 3000,
-            parameters: '00000000000000000000000000000000000000000000000000000000000a0000',
+            fee: 100,
+            parameters: '0x0000000000000000000000000000000000000000000000000000000000010000',
           },
         },
       ]
@@ -287,8 +341,8 @@ if (require.main === module) {
       const txid = await swapWithoutApi({
         amountIn,
         paths,
-        network: 'nile',
-        slippageBps: 50, // 0.5% slippage (adjust as needed)
+        network: 'mainnet',
+        slippageBps: 200, // 0.5% slippage (adjust as needed)
         submit: true, // Set false to preview route/commands without broadcasting
       })
 

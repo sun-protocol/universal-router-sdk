@@ -102,7 +102,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   if (params.tokenIn !== constants.trx) {
     await approveToPermit2(constants.permit2, params.tokenIn, BigInt(params.amountIn))
 
-    const permit2 = new AllowanceTransfer(tronWeb, constants.permit2, true)
+    const permit2 = new AllowanceTransfer(tronWeb, constants.permit2, isTestnet)
     permitSingleWithSignature = await permit2.generatePermitSignature(
       {
         owner: tronWeb.defaultAddress.base58 as string,
@@ -125,8 +125,6 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
     'swapTradeRoute',
     JSON.stringify(swapTradeRoute, (key, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
   )
-
-  throw new Error('test')
 
   const tradePlanner = new TradePlanner([swapTradeRoute], debugMode, {
     permitOptions: {

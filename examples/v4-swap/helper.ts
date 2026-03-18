@@ -15,9 +15,9 @@ export const tronWebNile = new TronWeb(
 )
 
 export const tronWebMainnet = new TronWeb(
-  'https://mainnet.trongrid.io', // fullNode
-  'https://mainnet.trongrid.io',
-  'https://mainnet.trongrid.io',
+  'https://api.trongrid.io', // fullNode
+  'https://api.trongrid.io',
+  'https://api.trongrid.io',
   process.env.PRIVATE_KEY ?? ''
 )
 
