@@ -20,7 +20,7 @@ export enum CommandType {
   SWEEP = 0x04,
   TRANSFER = 0x05,
   PAY_PORTION = 0x06,
-  // COMMAND_PLACEHOLDER = 0x07;
+  PAY_REFERRAL = 0x07,
 
   // Command Types where 0x08<=value<=0x0f, executed in the second nested-if block
   V2_SWAP_EXACT_IN = 0x08,

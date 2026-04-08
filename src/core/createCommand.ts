@@ -124,6 +124,7 @@ export const ABI_PARAMETER = {
   [CommandType.SWEEP]: parseAbiParameters('address token, address recipient, uint160 amountMin'),
   [CommandType.TRANSFER]: parseAbiParameters('address token, address recipient, uint256 value'),
   [CommandType.PAY_PORTION]: parseAbiParameters('address token, address recipient, uint256 bips'),
+  [CommandType.PAY_REFERRAL]: parseAbiParameters('address token, address project, uint256 bips'),
   [CommandType.BALANCE_CHECK_ERC20]: parseAbiParameters('address owner, address token, uint256 minBalance'),
 
   // Infinity Swap Actions

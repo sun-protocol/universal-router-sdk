@@ -1,5 +1,12 @@
-import { TradePlanner, parseRouteAPIResponse, type ParseRouteOptions } from '@sun-protocol/universal-router-sdk'
+import {
+  TradePlanner,
+  parseRouteAPIResponse,
+  type ParseRouteOptions,
+  type ReferralOptions,
+} from '@sun-protocol/universal-router-sdk'
 import { AllowanceTransfer, type PermitSingleWithSignature } from '@sun-protocol/permit2-sdk'
+import * as fs from 'fs'
+import * as path from 'path'
 import * as dotenv from 'dotenv'
 import { tronWebNile, tronWebMainnet, NILE, MAINNET, getSwapConstants, toEvmHex, toBase58 } from './helper'
 
@@ -14,6 +21,8 @@ interface RouterAPIParams {
   amountIn: string
   typeList?: string
   maxCost?: number
+  amountInReferralBips?: number
+  amountOutReferralBips?: number
 }
 
 interface RouterAPIResponse {
@@ -23,7 +32,15 @@ interface RouterAPIResponse {
 }
 
 async function fetchRouterAPI(params: RouterAPIParams, baseUrl: string): Promise<RouterAPIResponse> {
-  const { fromToken, toToken, amountIn, typeList = '', maxCost = 3 } = params
+  const {
+    fromToken,
+    toToken,
+    amountIn,
+    typeList = '',
+    maxCost = 3,
+    amountInReferralBips,
+    amountOutReferralBips,
+  } = params
 
   const url = new URL('/swap/routerUniversal', baseUrl)
   url.searchParams.append('fromToken', fromToken)
@@ -32,6 +49,12 @@ async function fetchRouterAPI(params: RouterAPIParams, baseUrl: string): Promise
   url.searchParams.append('typeList', typeList)
   url.searchParams.append('maxCost', maxCost.toString())
   url.searchParams.append('includeUnverifiedV4Hook', 'true')
+  if (amountInReferralBips != null) {
+    url.searchParams.append('amountInReferralBips', amountInReferralBips.toString())
+  }
+  if (amountOutReferralBips != null) {
+    url.searchParams.append('amountOutReferralBips', amountOutReferralBips.toString())
+  }
 
   const response = await fetch(url.toString(), {
     method: 'GET',
@@ -59,6 +82,9 @@ export interface SwapParams {
   amountIn: string
   network?: string
   slippage?: number
+  amountInReferralBps?: number
+  amountOutReferralBps?: number
+  referralProjectAddress?: string
 }
 
 export interface SwapResult {
@@ -79,7 +105,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const isTestnet = network === 'nile'
   const deadline = (Math.floor(Date.now() / 1000) + 36000).toString() // 1 hour from now
   const sigDeadline = (Math.floor(Date.now() / 1000) + 3600).toString()
-  const debugMode = false
+  const debugMode = true
 
   // 1. Fetch route
   const route = await fetchRouterAPI(
@@ -87,6 +113,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       fromToken: params.tokenIn,
       toToken: params.tokenOut,
       amountIn: params.amountIn,
+      amountInReferralBips: params.amountInReferralBps,
+      amountOutReferralBips: params.amountOutReferralBps,
     },
     constants.routerApiUrl
   )
@@ -96,6 +124,12 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   }
 
   const targetRoute = route.data[0]
+
+  // pretty print targetRoute
+  console.log(
+    'targetRoute',
+    JSON.stringify(targetRoute, (key, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
+  )
 
   // 2. Permit2 flow (skip for native TRX)
   let permitSingleWithSignature: PermitSingleWithSignature | undefined
@@ -126,11 +160,23 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
     JSON.stringify(swapTradeRoute, (key, value) => (typeof value === 'bigint' ? value.toString() : value), 2)
   )
 
+  let referralOptions: ReferralOptions | undefined
+  if (params.amountInReferralBps && params.referralProjectAddress) {
+    referralOptions = { mode: 'input', bps: params.amountInReferralBps, projectAddress: params.referralProjectAddress }
+  } else if (params.amountOutReferralBps && params.referralProjectAddress) {
+    referralOptions = {
+      mode: 'output',
+      bps: params.amountOutReferralBps,
+      projectAddress: params.referralProjectAddress,
+    }
+  }
+
   const tradePlanner = new TradePlanner([swapTradeRoute], debugMode, {
     permitOptions: {
       permitEnabled: !!permitSingleWithSignature,
       permit: permitSingleWithSignature,
     },
+    referralOptions,
   })
   tradePlanner.encode()
 
@@ -215,7 +261,8 @@ export const approveToPermit2 = async (permit2Address: string, tokenAddress: str
 if (require.main === module) {
   const TRX_ADDRESS: string = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb'
   const USDT_ADDRESS: string = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
-
+  const SUN_ADDRESS: string = 'TDqjTkZ63yHB19w2n7vPm2qAkLHwn9fKKk'
+  const WIN_ADDRESS: string = 'TNDSHKGBmgRx9mDYA9CnxPx55nu672yQw2'
   ;(async () => {
     console.log('============================================================')
     console.log(' Universal Router Swap (NILE testnet)')
@@ -229,10 +276,12 @@ if (require.main === module) {
 
     try {
       const result = await executeSwap({
-        tokenIn: USDT_ADDRESS,
+        tokenIn: WIN_ADDRESS,
         tokenOut: TRX_ADDRESS,
-        amountIn: '1000000000',
+        amountIn: '1000000',
         network: 'nile',
+        amountInReferralBps: 100,
+        referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
       })
 
       console.log('--------------------------- RESULT -------------------------')

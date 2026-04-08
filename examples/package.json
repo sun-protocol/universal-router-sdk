@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "@sun-protocol/permit2-sdk": "^1.0.0",
-    "@sun-protocol/universal-router-sdk": "^1.0.1",
-    "tronweb": "^6.0.4"
+    "@sun-protocol/universal-router-sdk": "file:.."
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

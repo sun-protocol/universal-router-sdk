@@ -22,6 +22,8 @@ export interface RouteData {
   poolVersions: string[]
   poolKeys: (PoolKey | null)[]
   stepAmountsOut: string[]
+  amountInReferralBips?: number
+  amountOutReferralBips?: number
 }
 
 export interface RouterAPIResponse {

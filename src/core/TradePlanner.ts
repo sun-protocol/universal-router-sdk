@@ -70,20 +70,49 @@ export class TradePlanner extends RoutePlanner {
       throw new Error('No plans to encode')
     }
 
+    const referral = this.context.options?.referralOptions
+    const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
+
+    this.validateReferralOptions()
+
     if (this.context.options?.permitOptions?.permitEnabled && this.context.options?.permitOptions?.permit) {
       this.addPermit(this.context.options?.permitOptions?.permit)
     }
-    if (!(this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false)) {
-      for (const plan of this.context.plans) {
-        if (plan.sections.length === 0) {
-          throw new Error('No sections to encode')
+
+    if (!isOneShotTransfer) {
+      if (referral?.mode === 'input') {
+        // Case 3: non-oneShotTransfer + input deduction
+        // Per plan: transfer to router, PAY_REFERRAL, then swaps from CONTRACT_BALANCE
+        for (const plan of this.context.plans) {
+          if (plan.sections.length === 0) throw new Error('No sections to encode')
+          if (!plan.input.isNative) {
+            this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, plan.amountIn)
+          }
+          this.addPayReferral(plan.input, referral.projectAddress, referral.bps)
+          for (const section of plan.sections) {
+            this.addSwap(plan, section)
+          }
+          this.addSweep(plan)
         }
-        for (const section of plan.sections) {
-          this.addSwap(plan, section)
+      } else {
+        // No referral, or Case 4: non-oneShotTransfer + output deduction
+        for (const plan of this.context.plans) {
+          if (plan.sections.length === 0) throw new Error('No sections to encode')
+          for (const section of plan.sections) {
+            this.addSwap(plan, section)
+          }
+          if (referral?.mode === 'output') {
+            this.addPayReferral(plan.output, referral.projectAddress, referral.bps)
+          }
+          this.addSweep(plan)
         }
-        this.addSweep(plan)
       }
     } else {
+      // oneShotTransfer
+      if (referral?.mode === 'output') {
+        throw new Error('Output referral with oneShotTransfer is not supported')
+      }
+
       let totalAmountIn = 0n
       for (const plan of this.context.plans) {
         totalAmountIn += plan.amountIn
@@ -92,6 +121,12 @@ export class TradePlanner extends RoutePlanner {
       if (!firstPlan.input.isNative) {
         this.addPermit2TransferFrom(firstPlan.input, ADDRESS_THIS, totalAmountIn)
       }
+
+      // Case 1: oneShotTransfer + input deduction
+      if (referral?.mode === 'input') {
+        this.addPayReferral(firstPlan.input, referral.projectAddress, referral.bps)
+      }
+
       for (let i = 0; i < this.context.plans.length; i++) {
         this.context.plans[i].spiltOptions = {
           enabled: true,
@@ -514,6 +549,11 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private getAmountIn(plan: SwapExecutionPlan, section: SwapSection): bigint {
+    // Case 3: funds already transferred to router via explicit PERMIT2_TRANSFER_FROM
+    if (this.isInputReferralWithExplicitTransfer()) {
+      return CONTRACT_BALANCE
+    }
+
     if (
       section.type === RouteType.V1 ||
       section.type === RouteType.STABLE ||
@@ -559,6 +599,10 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private getPayerIsUser(section: SwapSection): boolean {
+    // Case 3: funds already in the router from explicit transfer
+    if (this.isInputReferralWithExplicitTransfer()) {
+      return false
+    }
     return (
       section.isFirstSection &&
       (this.context.options?.permitOptions?.permitEnabled ?? false) &&
@@ -597,5 +641,30 @@ export class TradePlanner extends RoutePlanner {
     }
 
     throw new Error('Invalid steps no mid currency')
+  }
+
+  private addPayReferral(token: Currency, projectAddress: string, bps: number) {
+    const project = new Address(projectAddress)
+    if (this.debugMode) {
+      console.log('PayReferral params', 'token', token.hex, 'project', project.hex, 'bps', bps)
+    }
+    this.addCommand(CommandType.PAY_REFERRAL, [token.hex, project.hex, BigInt(bps)])
+  }
+
+  private isInputReferralWithExplicitTransfer(): boolean {
+    const referral = this.context.options?.referralOptions
+    const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
+    return !!referral && referral.mode === 'input' && !isOneShotTransfer
+  }
+
+  private validateReferralOptions() {
+    const referral = this.context.options?.referralOptions
+    if (!referral) return
+    if (!referral.projectAddress || referral.projectAddress.length === 0) {
+      throw new Error('referralOptions.projectAddress is required')
+    }
+    if (!Number.isInteger(referral.bps) || referral.bps < 0 || referral.bps > 10000) {
+      throw new Error('referralOptions.bps must be an integer between 0 and 10000')
+    }
   }
 }

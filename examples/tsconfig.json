@@ -8,6 +8,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "tronweb": ["../node_modules/tronweb"]
+    },
     "rootDir": ".",
     "outDir": "./dist"
   },
