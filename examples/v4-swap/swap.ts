@@ -23,6 +23,7 @@ interface RouterAPIParams {
   maxCost?: number
   amountInReferralBips?: number
   amountOutReferralBips?: number
+  slippageBips?: number
 }
 
 interface RouterAPIResponse {
@@ -40,6 +41,7 @@ async function fetchRouterAPI(params: RouterAPIParams, baseUrl: string): Promise
     maxCost = 3,
     amountInReferralBips,
     amountOutReferralBips,
+    slippageBips,
   } = params
 
   const url = new URL('/swap/routerUniversal', baseUrl)
@@ -54,6 +56,9 @@ async function fetchRouterAPI(params: RouterAPIParams, baseUrl: string): Promise
   }
   if (amountOutReferralBips != null) {
     url.searchParams.append('amountOutReferralBips', amountOutReferralBips.toString())
+  }
+  if (slippageBips != null) {
+    url.searchParams.append('slippageBips', slippageBips.toString())
   }
 
   const response = await fetch(url.toString(), {
@@ -81,7 +86,7 @@ export interface SwapParams {
   tokenOut: string
   amountIn: string
   network?: string
-  slippage?: number
+  slippageBips?: number
   amountInReferralBps?: number
   amountOutReferralBps?: number
   referralProjectAddress?: string
@@ -101,7 +106,7 @@ export interface SwapResult {
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const network = params.network || 'mainnet'
   const constants = getSwapConstants(network)
-  const slippage = params.slippage ?? 0.005
+  const slippageBips = params.slippageBips ?? 50
   const isTestnet = network === 'nile'
   const deadline = (Math.floor(Date.now() / 1000) + 36000).toString() // 1 hour from now
   const sigDeadline = (Math.floor(Date.now() / 1000) + 3600).toString()
@@ -115,6 +120,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       amountIn: params.amountIn,
       amountInReferralBips: params.amountInReferralBps,
       amountOutReferralBips: params.amountOutReferralBps,
+      slippageBips: slippageBips,
     },
     constants.routerApiUrl
   )
@@ -150,9 +156,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   }
 
   // 3. Parse route & build trade
-  const swapTradeRoute = parseRouteAPIResponse(targetRoute, isTestnet, {
-    slippage,
-  } as ParseRouteOptions)
+  const swapTradeRoute = parseRouteAPIResponse(targetRoute, isTestnet)
 
   //prettify swapTradeRoute
   console.log(
@@ -178,7 +182,29 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
     },
     referralOptions,
   })
+
+  if (debugMode) {
+    console.log('')
+    console.log('// ---------------------------------------------------------------------------')
+    console.log('// TradePlanner.encode')
+    console.log('// ---------------------------------------------------------------------------')
+  }
   tradePlanner.encode()
+  if (debugMode) {
+    console.log('// ---------------------------------------------------------------------------')
+    console.log('')
+  }
+
+  return {
+    txid: '0x0',
+    route: {
+      amountIn: targetRoute.amountIn,
+      amountOut: targetRoute.amountOut,
+      symbols: targetRoute.symbols,
+      poolVersions: targetRoute.poolVersions,
+      impact: targetRoute.impact,
+    },
+  }
 
   // 4. Build, sign, and broadcast
   try {

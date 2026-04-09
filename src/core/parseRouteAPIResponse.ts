@@ -1,5 +1,4 @@
 import { SwapTradeRoute, Pool, Currency, Permit2Signature, PoolKey, PoolVersion, RouteData } from '../types'
-import { Decimal } from 'decimal.js'
 import {
   newV1Pool,
   newV2Pool,
@@ -15,9 +14,23 @@ import { TESTNET_WTRX_ADDRESS, MAINNET_WTRX_ADDRESS, TRX_ADDRESS } from '../cons
 import { Address } from '../types'
 
 export interface ParseRouteOptions {
+  /**
+   * @deprecated Prefer {@link ParseRouteOptions.slippageBips} for deterministic slippage. Decimal values are
+   * converted with `Math.round(slippage * 1e6)` and may differ from an exact rational by rounding (e.g. ±1 wei).
+   */
   slippage?: number
+  /**
+   * Slippage in basis points, 0–10000 (e.g. 50 = 0.5%). Integer math only; use this for parity with on-chain
+   * or API-defined bps. When set, this takes precedence over {@link ParseRouteOptions.slippage}.
+   */
+  slippageBips?: bigint
 }
 
+/**
+ * Maps a single `RouteData` entry from the router API into a `SwapTradeRoute`.
+ *
+ * For slippage, pass {@link ParseRouteOptions.slippageBips} when possible; see deprecation on {@link ParseRouteOptions.slippage}.
+ */
 export function parseRouteAPIResponse(
   routeData: RouteData,
   isTestnet: boolean,
@@ -38,11 +51,26 @@ export function parseRouteAPIResponse(
   }
 
   let minimumAmountOut: bigint = 0n
-  if (options) {
-    const slippage = options.slippage ?? 0
-
+  if (routeData.amountOutMinimumRaw) {
+    minimumAmountOut = BigInt(routeData.amountOutMinimumRaw)
+  }
+  if (options && (options.slippage != null || options.slippageBips != null)) {
     const amountOutRawBigInt = BigInt(routeData.amountOutRaw)
-    minimumAmountOut = (amountOutRawBigInt * BigInt(Math.floor((1 - slippage) * 1000000))) / 1000000n
+
+    if (options.slippageBips != null) {
+      const bps = options.slippageBips
+      if (bps < 0n || bps > 10_000n) {
+        throw new Error('slippageBips must be between 0 and 10000')
+      }
+      minimumAmountOut = (amountOutRawBigInt * (10_000n - bps)) / 10_000n
+    } else {
+      const slippage = options.slippage ?? 0
+      if (slippage < 0 || slippage >= 1) {
+        throw new Error('slippage must be a decimal fraction in [0, 1), e.g. 0.005 for 0.5%')
+      }
+      const slippageMicro = BigInt(Math.round(slippage * 1_000_000))
+      minimumAmountOut = (amountOutRawBigInt * (1_000_000n - slippageMicro)) / 1_000_000n
+    }
 
     if (minimumAmountOut > amountOutRawBigInt) {
       minimumAmountOut = amountOutRawBigInt

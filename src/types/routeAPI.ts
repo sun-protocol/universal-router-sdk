@@ -11,6 +11,8 @@ export interface RouteData {
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
+  amountOutMinimum: string
+  amountOutMinimumRaw: string
   inUsd: string
   outUsd: string
   impact: string
