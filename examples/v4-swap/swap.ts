@@ -177,7 +177,6 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
 
   const tradePlanner = new TradePlanner([swapTradeRoute], debugMode, {
     permitOptions: {
-      permitEnabled: !!permitSingleWithSignature,
       permit: permitSingleWithSignature,
     },
     referralOptions,
@@ -193,17 +192,6 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   if (debugMode) {
     console.log('// ---------------------------------------------------------------------------')
     console.log('')
-  }
-
-  return {
-    txid: '0x0',
-    route: {
-      amountIn: targetRoute.amountIn,
-      amountOut: targetRoute.amountOut,
-      symbols: targetRoute.symbols,
-      poolVersions: targetRoute.poolVersions,
-      impact: targetRoute.impact,
-    },
   }
 
   // 4. Build, sign, and broadcast
@@ -289,6 +277,7 @@ if (require.main === module) {
   const USDT_ADDRESS: string = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
   const SUN_ADDRESS: string = 'TDqjTkZ63yHB19w2n7vPm2qAkLHwn9fKKk'
   const WIN_ADDRESS: string = 'TNDSHKGBmgRx9mDYA9CnxPx55nu672yQw2'
+  const USDJ_ADDRESS: string = 'TLBaRhANQoJFTqre9Nf1mjuwNWjCJeYqUL'
   ;(async () => {
     console.log('============================================================')
     console.log(' Universal Router Swap (NILE testnet)')
@@ -302,12 +291,12 @@ if (require.main === module) {
 
     try {
       const result = await executeSwap({
-        tokenIn: WIN_ADDRESS,
+        tokenIn: USDT_ADDRESS,
         tokenOut: TRX_ADDRESS,
         amountIn: '1000000',
         network: 'nile',
-        amountInReferralBps: 100,
-        referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
+        // amountInReferralBps: 100,
+        // referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
       })
 
       console.log('--------------------------- RESULT -------------------------')

@@ -74,7 +74,10 @@ export interface SwapExecutionOptions {
 }
 
 export interface PermitOptions {
-  permitEnabled: boolean
+  /**
+   * @deprecated Prefer {@link PermitOptions.disablePermit2} to control Permit2 / `payerIsUser` behavior.
+   */
+  permitEnabled?: boolean // default: true
   permit?: Permit2Signature
 }
 

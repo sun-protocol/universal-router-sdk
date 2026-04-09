@@ -229,7 +229,6 @@ export async function swapWithoutApi(params: SwapWithoutApiParams): Promise<stri
 
   const tradePlanner = new TradePlanner([swapTradeRoute], debugMode, {
     permitOptions: {
-      permitEnabled: !!permitSingleWithSignature,
       permit: permitSingleWithSignature,
     },
   })

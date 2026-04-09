@@ -54,7 +54,6 @@ export class TradePlanner extends RoutePlanner {
     debugMode: boolean = false,
     options: SwapExecutionOptions = {
       permitOptions: {
-        permitEnabled: false,
         permit: undefined,
       },
       tradeSpiltOptions: {
@@ -110,7 +109,7 @@ export class TradePlanner extends RoutePlanner {
 
     this.validateReferralOptions()
 
-    if (this.context.options?.permitOptions?.permitEnabled && this.context.options?.permitOptions?.permit) {
+    if (this.context.options?.permitOptions?.permit) {
       this.addPermit(this.context.options?.permitOptions?.permit)
     }
 
@@ -538,9 +537,9 @@ export class TradePlanner extends RoutePlanner {
     if (this.isInputReferralWithExplicitTransfer()) {
       return false
     }
+
     return (
       section.isFirstSection &&
-      (this.context.options?.permitOptions?.permitEnabled ?? false) &&
       !section.currencyInput.isNative &&
       !this.context.options?.tradeSpiltOptions?.oneShotTransfer
     )
