@@ -90,6 +90,8 @@ export interface SwapParams {
   amountInReferralBps?: number
   amountOutReferralBps?: number
   referralProjectAddress?: string
+  typeList?: string
+  maxCost?: number
 }
 
 export interface SwapResult {
@@ -121,6 +123,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       amountInReferralBips: params.amountInReferralBps,
       amountOutReferralBips: params.amountOutReferralBps,
       slippageBips: slippageBips,
+      typeList: params.typeList,
+      maxCost: params.maxCost,
     },
     constants.routerApiUrl
   )
@@ -291,8 +295,8 @@ if (require.main === module) {
 
     try {
       const result = await executeSwap({
-        tokenIn: USDT_ADDRESS,
-        tokenOut: TRX_ADDRESS,
+        tokenIn: TRX_ADDRESS,
+        tokenOut: USDT_ADDRESS,
         amountIn: '1000000',
         network: 'nile',
         // amountInReferralBps: 100,
