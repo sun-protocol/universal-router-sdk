@@ -7,18 +7,24 @@ dotenv.config()
 // Helper functions
 // ---------------------------------------------------------------------------
 
+// PRIVATE_KEY_NILE preferred; fall back to PRIVATE_KEY for backward compatibility.
+// PRIVATE_KEY_MAINNET has NO fallback — mainnet must be provisioned explicitly to
+// avoid accidentally signing mainnet txs with a testnet key (or vice versa).
+const NILE_KEY = process.env.PRIVATE_KEY_NILE ?? process.env.PRIVATE_KEY ?? ''
+const MAINNET_KEY = process.env.PRIVATE_KEY_MAINNET ?? ''
+
 export const tronWebNile = new TronWeb(
   'https://nile.trongrid.io', // fullNode
   'https://nile.trongrid.io',
   'https://nile.trongrid.io',
-  process.env.PRIVATE_KEY ?? ''
+  NILE_KEY
 )
 
 export const tronWebMainnet = new TronWeb(
   'https://api.trongrid.io', // fullNode
   'https://api.trongrid.io',
   'https://api.trongrid.io',
-  process.env.PRIVATE_KEY ?? ''
+  MAINNET_KEY
 )
 
 // ---------------------------------------------------------------------------
