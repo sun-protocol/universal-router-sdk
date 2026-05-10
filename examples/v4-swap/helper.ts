@@ -45,7 +45,7 @@ export const MAINNET: SwapConstants = {
 }
 
 export const NILE: SwapConstants = {
-  universalRouter: 'TMqVPvbv8ydTmy4uz5ywGWvTovth1fijdV',
+  universalRouter: 'TLmHD2TJoGVEMkGiE1JzSwd6CEPa8jXumJ',
   permit2: 'TYQuuhGbEMxF7nZxUHV3uHJxAVVAegNU9h',
   routerApiUrl: 'https://tnrouter.endjgfsv.link',
   trx: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb',
