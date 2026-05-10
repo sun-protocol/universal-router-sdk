@@ -43,9 +43,9 @@ export interface SwapConstants extends NetworkConstants {
 }
 
 export const MAINNET: SwapConstants = {
-  universalRouter: 'TSJEtPuqHpvSaVnSwvCsngaeBxrGUzp95Q',
+  universalRouter: 'TLmHD2TJoGVEMkGiE1JzSwd6CEPa8jXumJ',
   permit2: 'TTJxU3P8rHycAyFY4kVtGNfmnMH4ezcuM9',
-  routerApiUrl: 'https://rot.endjgfsv.link',
+  routerApiUrl: 'https://tmrouter.endjgfsv.link',
   trx: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb',
   clQuoter: 'TSupQTJWWoVpUqA7KGVYb8dB97n3civwiJ',
 }
