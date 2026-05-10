@@ -32,6 +32,12 @@ interface TestCase {
   skipped?: boolean
   error?: Error
   appliedReferral?: AppliedReferral
+  // Negative test: expect executeSwap to throw an Error whose message contains this substring.
+  // - matched   → expectedErrorMet=true, treated as success
+  // - mismatch  → error stored as a normal failure
+  // - no throw  → synthetic error stored ("expected error not raised")
+  expectError?: string
+  expectedErrorMet?: boolean
 }
 
 interface SwapParams {
@@ -827,6 +833,19 @@ export async function integrateTest() {
         amountInReferralBps: 50,
       },
     },
+    {
+      group: 'referral edge case',
+      name: 'router rejects both in & out bps (negative)',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountInReferralBps: 30,
+        amountOutReferralBps: 30,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+      expectError: 'amountInReferralBips and amountOutReferralBips cannot both be set',
+    },
   ]
   // check is there any test case has picked
   const pickedCases: TestCase[] = []
@@ -870,10 +889,23 @@ export async function integrateTest() {
         maxCost: sp.maxCost,
       } as ExecuteSwapParams)
 
-      testCase.txId = result.txid
+      if (testCase.expectError) {
+        const msg = `Expected error containing "${testCase.expectError}" but swap succeeded with txid ${result.txid}`
+        console.error(`❌ ${msg}`)
+        testCase.error = new Error(msg)
+        testCase.txId = result.txid
+      } else {
+        testCase.txId = result.txid
+      }
     } catch (error) {
-      console.error(`❌ Error running ${testCase.name} (group: ${testCase.group})`, error)
-      testCase.error = error as Error
+      const err = error as Error
+      if (testCase.expectError && err.message.includes(testCase.expectError)) {
+        testCase.expectedErrorMet = true
+        console.log(`✅ Expected error matched: ${err.message}`)
+      } else {
+        console.error(`❌ Error running ${testCase.name} (group: ${testCase.group})`, err)
+        testCase.error = err
+      }
     }
   }
 

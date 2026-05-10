@@ -52,6 +52,18 @@ async function txBatchCheck(network: string) {
   for (const testCase of testCases) {
     const referralTag = formatReferralTag(testCase.appliedReferral)
 
+    if (testCase.expectedErrorMet) {
+      // Negative test passed: executeSwap threw the expected error before any tx was sent.
+      console.log(
+        `${colors.gray}[${testCase.group}]${colors.reset}`,
+        referralTag,
+        testCase.name,
+        `${colors.green}✓ EXPECTED_ERROR${colors.reset}`,
+        `${colors.gray}("${testCase.expectError}")${colors.reset}`
+      )
+      continue
+    }
+
     if (!testCase.error) {
       if (testCase.skipped || !testCase.txId) {
         continue
