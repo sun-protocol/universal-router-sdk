@@ -43,7 +43,7 @@ async function txBatchCheck(network: string) {
     throw new Error(`Invalid network: ${network}`)
   }
 
-  const testCases = require('./testCases.json')
+  const testCases = require(`./testCases.${network}.json`)
 
   console.log(`\n${'='.repeat(80)}`)
   console.log(`${colors.blue}Transaction Batch Check${colors.reset}`)
@@ -105,5 +105,6 @@ async function txBatchCheck(network: string) {
 }
 
 if (require.main === module) {
-  txBatchCheck('nile')
+  const network = process.env.NETWORK || 'nile'
+  txBatchCheck(network)
 }

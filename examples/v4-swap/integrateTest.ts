@@ -1,21 +1,9 @@
 import { toEvmHex } from '@sun-protocol/permit2-sdk'
 import { PoolVersion } from '@sun-protocol/universal-router-sdk'
-import {
-  SUN_ADDRESS,
-  TRX_ADDRESS,
-  USDT_ADDRESS,
-  WIN_ADDRESS,
-  TUSD_ADDRESS,
-  USDJ_ADDRESS,
-  USDDOLD_ADDRESS,
-  USDC_ADDRESS,
-  USDD2_ADDRESS,
-  USDD_ADDRESS,
-  USDTNEW_ADDRESS,
-  THTX_ADDRESS,
-  TSUN_ADDRESS,
-} from './address'
+import { getAddresses } from './address'
 import { executeSwap, SwapParams as ExecuteSwapParams } from './swap'
+
+type Network = 'mainnet' | 'nile'
 
 interface AppliedReferral {
   mode: 'input' | 'output' | 'none'
@@ -38,6 +26,8 @@ interface TestCase {
   // - no throw  → synthetic error stored ("expected error not raised")
   expectError?: string
   expectedErrorMet?: boolean
+  // Restrict the case to specific networks. Undefined ⇒ runs on all networks.
+  networks?: Network[]
 }
 
 interface SwapParams {
@@ -52,6 +42,8 @@ interface SwapParams {
   referralProjectAddress?: string
   // Set true to opt out of DEFAULT_REFERRAL when no referral fields are specified.
   noReferral?: boolean
+  // Per-case slippage override; falls back to the runner default when omitted.
+  slippageBips?: number
 }
 
 interface ResolvedReferral {
@@ -60,17 +52,40 @@ interface ResolvedReferral {
   referralProjectAddress?: string
 }
 
-export const REFERRAL_PROJECT_ADDRESS = 'TNrVLZTqJ14FoFxcPHAHNJTD7taZeMK1vT'
+// Per-network referral project address. Mainnet must be supplied via env;
+// no checked-in default to avoid accidentally directing real fees to a test
+// address on a production run.
+const REFERRAL_PROJECT_ADDRESS_NILE = 'TNrVLZTqJ14FoFxcPHAHNJTD7taZeMK1vT'
+const REFERRAL_PROJECT_ADDRESS_MAINNET = process.env.REFERRAL_PROJECT_ADDRESS_MAINNET ?? ''
 
-// Applied when a TestCase specifies none of the referral fields and noReferral is not set.
-// Capped under the on-chain maxReferralBips (85).
-export const DEFAULT_REFERRAL: ResolvedReferral = {
-  amountInReferralBps: 50,
-  amountOutReferralBps: 0,
-  referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+// Backward-compatible export — defaults to the nile address. New code should
+// use getReferralProjectAddress(network) instead.
+export const REFERRAL_PROJECT_ADDRESS = REFERRAL_PROJECT_ADDRESS_NILE
+
+export function getReferralProjectAddress(network: Network): string {
+  return network === 'mainnet' ? REFERRAL_PROJECT_ADDRESS_MAINNET : REFERRAL_PROJECT_ADDRESS_NILE
 }
 
-export function resolveReferral(sp: SwapParams): ResolvedReferral {
+// Default referral applied when a TestCase specifies none of the referral fields
+// and noReferral is not set. Capped under the on-chain maxReferralBips (85).
+// Project address is filled in per-run based on the active network.
+export const DEFAULT_REFERRAL_BPS_IN = 50
+export const DEFAULT_REFERRAL_BPS_OUT = 0
+
+function buildDefaultReferral(network: Network): ResolvedReferral {
+  return {
+    amountInReferralBps: DEFAULT_REFERRAL_BPS_IN,
+    amountOutReferralBps: DEFAULT_REFERRAL_BPS_OUT,
+    referralProjectAddress: getReferralProjectAddress(network),
+  }
+}
+
+// Backward-compatible default (nile values). Kept exported because the verifier
+// scripts and downstream consumers may reference it; runtime code prefers the
+// network-aware buildDefaultReferral().
+export const DEFAULT_REFERRAL: ResolvedReferral = buildDefaultReferral('nile')
+
+export function resolveReferral(sp: SwapParams, network: Network = 'nile'): ResolvedReferral {
   if (sp.noReferral) {
     return {}
   }
@@ -85,7 +100,7 @@ export function resolveReferral(sp: SwapParams): ResolvedReferral {
       referralProjectAddress: sp.referralProjectAddress,
     }
   }
-  return DEFAULT_REFERRAL
+  return buildDefaultReferral(network)
 }
 
 export function computeAppliedReferral(r: ResolvedReferral): AppliedReferral {
@@ -99,10 +114,44 @@ export function computeAppliedReferral(r: ResolvedReferral): AppliedReferral {
 }
 
 export async function integrateTest() {
-  const amountSampleDecimals3 = (1e3).toString()
-  const amountSampleDecimals5 = (1e5).toString()
-  const amountSampleDecimals6 = (1e6).toString()
-  const amountSampleDecimals18 = (1e18).toString()
+  const network: Network = (process.env.NETWORK as Network) || 'nile'
+  if (network !== 'mainnet' && network !== 'nile') {
+    throw new Error(`Unsupported NETWORK="${network}". Use "nile" or "mainnet".`)
+  }
+  if (network === 'mainnet' && process.env.MAINNET_CONFIRM !== 'yes') {
+    throw new Error('Refusing to run on mainnet without MAINNET_CONFIRM=yes')
+  }
+  if (network === 'mainnet' && !REFERRAL_PROJECT_ADDRESS_MAINNET) {
+    throw new Error(
+      'REFERRAL_PROJECT_ADDRESS_MAINNET env var is required for mainnet runs ' +
+        '(used by DEFAULT_REFERRAL fallback and any test case that does not set referralProjectAddress)'
+    )
+  }
+
+  const isMainnet = network === 'mainnet'
+  console.log(`🌐 Running on ${network}${isMainnet ? ' (MAINNET — real funds)' : ''}`)
+
+  // Mainnet uses dust amounts; nile keeps the original unit-test sized amounts.
+  const amountSampleDecimals3 = (isMainnet ? 1e1 : 1e3).toString()
+  const amountSampleDecimals5 = (isMainnet ? 1e3 : 1e5).toString()
+  const amountSampleDecimals6 = (isMainnet ? 1e3 : 1e6).toString()
+  const amountSampleDecimals18 = (isMainnet ? 1e15 : 1e18).toString()
+
+  const {
+    SUN_ADDRESS,
+    TRX_ADDRESS,
+    USDT_ADDRESS,
+    WIN_ADDRESS,
+    TUSD_ADDRESS,
+    USDJ_ADDRESS,
+    USDDOLD_ADDRESS,
+    USDC_ADDRESS,
+    USDD_ADDRESS,
+    USDTNEW_ADDRESS,
+    THTX_ADDRESS,
+    TSUN_ADDRESS,
+  } = getAddresses(network)
+  const REFERRAL_PROJECT_ADDRESS = getReferralProjectAddress(network)
 
   const V1_GROUP = 'v1 swap'
   const V2_GROUP = 'v2 swap'
@@ -130,6 +179,16 @@ export async function integrateTest() {
     [INPUT_REFERRAL_GROUP]: true,
     [OUTPUT_REFERRAL_GROUP]: true,
     [REFERRAL_EDGE_GROUP]: true,
+  }
+
+  // GROUPS env override: comma-separated whitelist. Anything not listed gets disabled.
+  // Example: GROUPS=v3 swap,v4 swap,no referral
+  if (process.env.GROUPS) {
+    const enabled = new Set(process.env.GROUPS.split(',').map(s => s.trim()))
+    for (const k of Object.keys(groupWhiteList)) {
+      groupWhiteList[k] = enabled.has(k)
+    }
+    console.log(`📋 GROUPS override active: ${[...enabled].join(', ')}`)
   }
 
   const testCases: TestCase[] = [
@@ -349,6 +408,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'USDT->USDDOLD 2pool 0x3',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDT_ADDRESS,
         toToken: USDDOLD_ADDRESS,
@@ -361,6 +421,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'USDDOLD->USDT 2pool 0x3',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDDOLD_ADDRESS,
         toToken: USDT_ADDRESS,
@@ -541,6 +602,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'USDT->USDDOLD usdd2pooltusdusdt 0x12',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDT_ADDRESS,
         toToken: USDDOLD_ADDRESS,
@@ -553,6 +615,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'USDDOLD->USDT usdd2pooltusdusdt 0x12',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDDOLD_ADDRESS,
         toToken: USDT_ADDRESS,
@@ -565,6 +628,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'TUSD->USDDOLD usdd2pooltusdusdt 0x12',
+      networks: ['nile'],
       swapParams: {
         fromToken: TUSD_ADDRESS,
         toToken: USDDOLD_ADDRESS,
@@ -577,6 +641,7 @@ export async function integrateTest() {
     {
       group: 'stable swap',
       name: 'USDDOLD->TUSD usdd2pooltusdusdt 0x12',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDDOLD_ADDRESS,
         toToken: TUSD_ADDRESS,
@@ -675,6 +740,7 @@ export async function integrateTest() {
     {
       group: 'psm swap',
       name: 'USDTNEW->USDD psm usdt20psm 0x1',
+      networks: ['nile'],
       swapParams: {
         fromToken: USDTNEW_ADDRESS,
         toToken: USDD_ADDRESS,
@@ -687,6 +753,7 @@ export async function integrateTest() {
     {
       group: 'htx sun swap',
       name: 'THTX->TSUN htx_sun htxsun 0x0',
+      networks: ['nile'],
       swapParams: {
         fromToken: THTX_ADDRESS,
         toToken: TSUN_ADDRESS,
@@ -699,6 +766,7 @@ export async function integrateTest() {
     {
       group: 'htx sun swap',
       name: 'TSUN->THTX htx_sun htxsun 0x0',
+      networks: ['nile'],
       swapParams: {
         fromToken: TSUN_ADDRESS,
         toToken: THTX_ADDRESS,
@@ -866,8 +934,13 @@ export async function integrateTest() {
       testCase.skipped = true
       continue
     }
+    if (testCase.networks && !testCase.networks.includes(network)) {
+      console.log(`⏭️  Skipping ${testCase.name} (not enabled on ${network})`)
+      testCase.skipped = true
+      continue
+    }
     const sp = testCase.swapParams
-    const resolvedReferral = resolveReferral(sp)
+    const resolvedReferral = resolveReferral(sp, network)
     testCase.appliedReferral = computeAppliedReferral(resolvedReferral)
     const referralLabel =
       testCase.appliedReferral.mode === 'none'
@@ -880,8 +953,8 @@ export async function integrateTest() {
         tokenIn: sp.fromToken,
         tokenOut: sp.toToken,
         amountIn: sp.amountIn,
-        network: 'nile',
-        slippageBips: 50,
+        network,
+        slippageBips: sp.slippageBips ?? 50,
         amountInReferralBps: resolvedReferral.amountInReferralBps,
         amountOutReferralBps: resolvedReferral.amountOutReferralBps,
         referralProjectAddress: resolvedReferral.referralProjectAddress,
@@ -912,7 +985,7 @@ export async function integrateTest() {
   const fs = require('fs')
   const path = require('path')
 
-  const testCasesFilePath = path.join(__dirname, 'testCases.json')
+  const testCasesFilePath = path.join(__dirname, `testCases.${network}.json`)
 
   fs.writeFileSync(testCasesFilePath, JSON.stringify(testCases, null, 2), 'utf-8')
   console.log(`testCases written to ${testCasesFilePath}`)
