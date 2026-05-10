@@ -17,6 +17,12 @@ import {
 } from './address'
 import { executeSwap, SwapParams as ExecuteSwapParams } from './swap'
 
+interface AppliedReferral {
+  mode: 'input' | 'output' | 'none'
+  bps: number
+  projectAddress?: string
+}
+
 interface TestCase {
   group: string
   name: string
@@ -25,6 +31,7 @@ interface TestCase {
   picked?: boolean
   skipped?: boolean
   error?: Error
+  appliedReferral?: AppliedReferral
 }
 
 interface SwapParams {
@@ -34,6 +41,55 @@ interface SwapParams {
   targetPoolVersion?: PoolVersion
   typeList?: string
   maxCost?: number
+  amountInReferralBps?: number
+  amountOutReferralBps?: number
+  referralProjectAddress?: string
+  // Set true to opt out of DEFAULT_REFERRAL when no referral fields are specified.
+  noReferral?: boolean
+}
+
+interface ResolvedReferral {
+  amountInReferralBps?: number
+  amountOutReferralBps?: number
+  referralProjectAddress?: string
+}
+
+export const REFERRAL_PROJECT_ADDRESS = 'TNrVLZTqJ14FoFxcPHAHNJTD7taZeMK1vT'
+
+// Applied when a TestCase specifies none of the referral fields and noReferral is not set.
+// Capped under the on-chain maxReferralBips (85).
+export const DEFAULT_REFERRAL: ResolvedReferral = {
+  amountInReferralBps: 50,
+  amountOutReferralBps: 0,
+  referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+}
+
+export function resolveReferral(sp: SwapParams): ResolvedReferral {
+  if (sp.noReferral) {
+    return {}
+  }
+  const anySet =
+    sp.amountInReferralBps !== undefined ||
+    sp.amountOutReferralBps !== undefined ||
+    sp.referralProjectAddress !== undefined
+  if (anySet) {
+    return {
+      amountInReferralBps: sp.amountInReferralBps,
+      amountOutReferralBps: sp.amountOutReferralBps,
+      referralProjectAddress: sp.referralProjectAddress,
+    }
+  }
+  return DEFAULT_REFERRAL
+}
+
+export function computeAppliedReferral(r: ResolvedReferral): AppliedReferral {
+  if (r.amountInReferralBps && r.referralProjectAddress) {
+    return { mode: 'input', bps: r.amountInReferralBps, projectAddress: r.referralProjectAddress }
+  }
+  if (r.amountOutReferralBps && r.referralProjectAddress) {
+    return { mode: 'output', bps: r.amountOutReferralBps, projectAddress: r.referralProjectAddress }
+  }
+  return { mode: 'none', bps: 0 }
 }
 
 export async function integrateTest() {
@@ -50,6 +106,10 @@ export async function integrateTest() {
   const PSM_GROUP = 'psm swap'
   const HTX_SUN_GROUP = 'htx sun swap'
   const MIXED_GROUP = 'mixed swap'
+  const NO_REFERRAL_GROUP = 'no referral'
+  const INPUT_REFERRAL_GROUP = 'input referral'
+  const OUTPUT_REFERRAL_GROUP = 'output referral'
+  const REFERRAL_EDGE_GROUP = 'referral edge case'
 
   const groupWhiteList: Record<string, boolean> = {
     [V1_GROUP]: true,
@@ -60,6 +120,10 @@ export async function integrateTest() {
     [PSM_GROUP]: true,
     [HTX_SUN_GROUP]: true,
     [MIXED_GROUP]: true,
+    [NO_REFERRAL_GROUP]: true,
+    [INPUT_REFERRAL_GROUP]: true,
+    [OUTPUT_REFERRAL_GROUP]: true,
+    [REFERRAL_EDGE_GROUP]: true,
   }
 
   const testCases: TestCase[] = [
@@ -674,6 +738,95 @@ export async function integrateTest() {
         amountIn: amountSampleDecimals6,
       },
     },
+
+    // -------------------------------------------------------------------------
+    // Referral coverage
+    // -------------------------------------------------------------------------
+    {
+      group: 'no referral',
+      name: 'USDT->TRX no referral (mixed)',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        noReferral: true,
+      },
+    },
+    {
+      group: 'no referral',
+      name: 'TRX->USDT no referral (mixed)',
+      swapParams: {
+        fromToken: TRX_ADDRESS,
+        toToken: USDT_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        noReferral: true,
+      },
+    },
+    {
+      group: 'input referral',
+      name: 'USDT->TRX input 0.5%',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountInReferralBps: 50,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+    },
+    {
+      group: 'input referral',
+      name: 'TRX->USDT input 0.5% (native in)',
+      swapParams: {
+        fromToken: TRX_ADDRESS,
+        toToken: USDT_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountInReferralBps: 50,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+    },
+    {
+      group: 'output referral',
+      name: 'USDT->TRX output 0.5%',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountOutReferralBps: 50,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+    },
+    {
+      group: 'output referral',
+      name: 'TRX->USDT output 0.5% (native in)',
+      swapParams: {
+        fromToken: TRX_ADDRESS,
+        toToken: USDT_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountOutReferralBps: 50,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+    },
+    {
+      group: 'referral edge case',
+      name: 'USDT->TRX inBps=0 (should be ignored)',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountInReferralBps: 0,
+        referralProjectAddress: REFERRAL_PROJECT_ADDRESS,
+      },
+    },
+    {
+      group: 'referral edge case',
+      name: 'USDT->TRX bps without project (should be ignored)',
+      swapParams: {
+        fromToken: USDT_ADDRESS,
+        toToken: TRX_ADDRESS,
+        amountIn: amountSampleDecimals6,
+        amountInReferralBps: 50,
+      },
+    },
   ]
   // check is there any test case has picked
   const pickedCases: TestCase[] = []
@@ -683,64 +836,44 @@ export async function integrateTest() {
     }
   }
 
-  if (pickedCases.length === 0) {
-    for (const testCase of testCases) {
-      if (!groupWhiteList[testCase.group]) {
-        console.log(`⏭️  Skipping ${testCase.name} (group: ${testCase.group} not in whitelist)`)
-        testCase.skipped = true
-        continue
-      }
-      console.log(`✅ Running ${testCase.name} (group: ${testCase.group})`)
-
-      try {
-        const result = await executeSwap({
-          tokenIn: testCase.swapParams.fromToken,
-          tokenOut: testCase.swapParams.toToken,
-          amountIn: testCase.swapParams.amountIn,
-          network: 'nile',
-          slippageBips: 50,
-          amountInReferralBps: 100,
-          amountOutReferralBps: 0,
-          referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
-          typeList: testCase.swapParams.typeList,
-          maxCost: testCase.swapParams.maxCost,
-        } as ExecuteSwapParams)
-
-        testCase.txId = result.txid
-      } catch (error) {
-        console.error(`❌ Error running ${testCase.name} (group: ${testCase.group})`, error)
-        testCase.error = error as Error
-      }
-    }
-  } else {
+  const casesToRun = pickedCases.length > 0 ? pickedCases : testCases
+  if (pickedCases.length > 0) {
     console.log(`📋 Running ${pickedCases.length} picked test cases`)
-    for (const testCase of pickedCases) {
-      if (!groupWhiteList[testCase.group]) {
-        console.log(`⏭️  Skipping ${testCase.name} (group: ${testCase.group} not in whitelist)`)
-        testCase.skipped = true
-        continue
-      }
-      console.log(`✅ Running ${testCase.name} (group: ${testCase.group})`)
+  }
 
-      try {
-        const result = await executeSwap({
-          tokenIn: testCase.swapParams.fromToken,
-          tokenOut: testCase.swapParams.toToken,
-          amountIn: testCase.swapParams.amountIn,
-          network: 'nile',
-          slippageBips: 50,
-          amountInReferralBps: 100,
-          amountOutReferralBps: 0,
-          referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
-          typeList: testCase.swapParams.typeList,
-          maxCost: testCase.swapParams.maxCost,
-        } as ExecuteSwapParams)
+  for (const testCase of casesToRun) {
+    if (!groupWhiteList[testCase.group]) {
+      console.log(`⏭️  Skipping ${testCase.name} (group: ${testCase.group} not in whitelist)`)
+      testCase.skipped = true
+      continue
+    }
+    const sp = testCase.swapParams
+    const resolvedReferral = resolveReferral(sp)
+    testCase.appliedReferral = computeAppliedReferral(resolvedReferral)
+    const referralLabel =
+      testCase.appliedReferral.mode === 'none'
+        ? 'none'
+        : `${testCase.appliedReferral.mode}/${testCase.appliedReferral.bps}bps`
+    console.log(`✅ Running ${testCase.name} (group: ${testCase.group}, referral: ${referralLabel})`)
 
-        testCase.txId = result.txid
-      } catch (error) {
-        console.error(`❌ Error running ${testCase.name} (group: ${testCase.group})`, error)
-        testCase.error = error as Error
-      }
+    try {
+      const result = await executeSwap({
+        tokenIn: sp.fromToken,
+        tokenOut: sp.toToken,
+        amountIn: sp.amountIn,
+        network: 'nile',
+        slippageBips: 50,
+        amountInReferralBps: resolvedReferral.amountInReferralBps,
+        amountOutReferralBps: resolvedReferral.amountOutReferralBps,
+        referralProjectAddress: resolvedReferral.referralProjectAddress,
+        typeList: sp.typeList,
+        maxCost: sp.maxCost,
+      } as ExecuteSwapParams)
+
+      testCase.txId = result.txid
+    } catch (error) {
+      console.error(`❌ Error running ${testCase.name} (group: ${testCase.group})`, error)
+      testCase.error = error as Error
     }
   }
 
