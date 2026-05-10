@@ -1,22 +1,38 @@
-// address.ts is a file that contains the addresses of the contracts that are used in the project
-export const TRX_ADDRESS: string = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb'
-export const USDT_ADDRESS: string = 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf'
-export const USDC_ADDRESS: string = 'TWMCMCoJPqCGw5RR7eChF2HoY3a9B8eYA3'
-export const USDTNEW_ADDRESS: string = 'TZDnq7egPqzi7H4SXy1ABvwaVRvRTaVfJW'
-export const TUSD_ADDRESS: string = 'TRz7J6dD2QWxBoumfYt4b3FaiRG23pXfop'
-export const USDDOLD_ADDRESS: string = 'TGjgvdTWWrybVLaVeFqSyVqJQWjxqRYbaK'
-export const USDD_ADDRESS: string = 'TZ78R2E6ejfFhxq8hxrmuqT6hGBxjHQbo4'
-export const USDJ_ADDRESS: string = 'TLBaRhANQoJFTqre9Nf1mjuwNWjCJeYqUL'
-export const WTRX_ADDRESS: string = 'TYsbWxNnyTgsZaTFaue9hqpxkU3Fkco94a'
-export const SUN_ADDRESS: string = 'TDqjTkZ63yHB19w2n7vPm2qAkLHwn9fKKk'
-export const SUNOLD_ADDRESS: string = 'TWrZRHY9aKQZcyjpovdH6qeCEyYZrRQDZt'
-export const BTC_ADDRESS: string = 'TG9XJ75ZWcUw69W8xViEJZQ365fRupGkFP'
-export const ETH_ADDRESS: string = 'TQz9i4JygMCzizdVu8NE4BdqesrsHv1L93'
-export const JST_ADDRESS: string = 'TF17BgPaZYbz8oxbjhriubPDsA7ArKoLX3'
-export const WIN_ADDRESS: string = 'TNDSHKGBmgRx9mDYA9CnxPx55nu672yQw2'
-export const DICE_ADDRESS: string = 'TLVu3Pzaep38SGvgCxUe1cUk2SNM6fyR4e'
-export const LIVE_ADDRESS: string = 'TLwpNV2gVkVk1g7ejZJ2hqzsE7RZvDuRSb'
-export const HT_ADDRESS: string = 'TGfVzt44kg6ZJ4fUqpHzJy3Jb37YMf8pMH'
-export const USDD2_ADDRESS: string = 'TWvPn9LWmNd1DMtt52yKHhNJazi7sDfcUq'
-export const THTX_ADDRESS: string = 'TRVd6s9vM2FjgQHco1xsAGtZ6Hbvd7zVeT'
-export const TSUN_ADDRESS: string = 'TJyx4HVE5MDVEufBay3rRqSckZD1q6Skfu'
+// Address router. New code should use `getAddresses(network)`. The flat exports
+// at the bottom remain for backward compatibility (nile values, identical to
+// pre-split behavior).
+import { NILE_ADDRESSES } from './address.nile'
+import { MAINNET_ADDRESSES } from './address.mainnet'
+
+export type AddressMap = { readonly [K in keyof typeof NILE_ADDRESSES]: string }
+
+export function getAddresses(network: string): AddressMap {
+  if (network === 'mainnet') return MAINNET_ADDRESSES
+  if (network === 'nile') return NILE_ADDRESSES
+  throw new Error(`Unsupported network: ${network}`)
+}
+
+// Backward-compatible flat exports — nile values.
+// Deprecated for new code; prefer `getAddresses(network)` so the testCases stay
+// network-agnostic.
+export const TRX_ADDRESS = NILE_ADDRESSES.TRX_ADDRESS
+export const USDT_ADDRESS = NILE_ADDRESSES.USDT_ADDRESS
+export const USDC_ADDRESS = NILE_ADDRESSES.USDC_ADDRESS
+export const USDTNEW_ADDRESS = NILE_ADDRESSES.USDTNEW_ADDRESS
+export const TUSD_ADDRESS = NILE_ADDRESSES.TUSD_ADDRESS
+export const USDDOLD_ADDRESS = NILE_ADDRESSES.USDDOLD_ADDRESS
+export const USDD_ADDRESS = NILE_ADDRESSES.USDD_ADDRESS
+export const USDJ_ADDRESS = NILE_ADDRESSES.USDJ_ADDRESS
+export const WTRX_ADDRESS = NILE_ADDRESSES.WTRX_ADDRESS
+export const SUN_ADDRESS = NILE_ADDRESSES.SUN_ADDRESS
+export const SUNOLD_ADDRESS = NILE_ADDRESSES.SUNOLD_ADDRESS
+export const BTC_ADDRESS = NILE_ADDRESSES.BTC_ADDRESS
+export const ETH_ADDRESS = NILE_ADDRESSES.ETH_ADDRESS
+export const JST_ADDRESS = NILE_ADDRESSES.JST_ADDRESS
+export const WIN_ADDRESS = NILE_ADDRESSES.WIN_ADDRESS
+export const DICE_ADDRESS = NILE_ADDRESSES.DICE_ADDRESS
+export const LIVE_ADDRESS = NILE_ADDRESSES.LIVE_ADDRESS
+export const HT_ADDRESS = NILE_ADDRESSES.HT_ADDRESS
+export const USDD2_ADDRESS = NILE_ADDRESSES.USDD2_ADDRESS
+export const THTX_ADDRESS = NILE_ADDRESSES.THTX_ADDRESS
+export const TSUN_ADDRESS = NILE_ADDRESSES.TSUN_ADDRESS
