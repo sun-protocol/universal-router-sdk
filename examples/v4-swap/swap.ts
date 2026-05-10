@@ -9,8 +9,13 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as dotenv from 'dotenv'
 import { tronWebNile, tronWebMainnet, NILE, MAINNET, getSwapConstants, toEvmHex, toBase58 } from './helper'
+import type { TronWeb } from 'tronweb'
 
-const tronWeb = tronWebNile
+function pickTronWeb(network: string): TronWeb {
+  if (network === 'mainnet') return tronWebMainnet
+  if (network === 'nile') return tronWebNile
+  throw new Error(`Unsupported network: ${network}`)
+}
 // ---------------------------------------------------------------------------
 // Router API
 // ---------------------------------------------------------------------------
@@ -108,6 +113,7 @@ export interface SwapResult {
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const network = params.network || 'mainnet'
   const constants = getSwapConstants(network)
+  const tronWeb = pickTronWeb(network)
   const slippageBips = params.slippageBips ?? 50
   const isTestnet = network === 'nile'
   const deadline = (Math.floor(Date.now() / 1000) + 36000).toString() // 1 hour from now
@@ -144,7 +150,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   // 2. Permit2 flow (skip for native TRX)
   let permitSingleWithSignature: PermitSingleWithSignature | undefined
   if (params.tokenIn !== constants.trx) {
-    await approveToPermit2(constants.permit2, params.tokenIn, BigInt(params.amountIn))
+    await approveToPermit2(tronWeb, constants.permit2, params.tokenIn, BigInt(params.amountIn))
 
     const permit2 = new AllowanceTransfer(tronWeb, constants.permit2, isTestnet)
     permitSingleWithSignature = await permit2.generatePermitSignature(
@@ -243,7 +249,12 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   }
 }
 
-export const approveToPermit2 = async (permit2Address: string, tokenAddress: string, amount: bigint) => {
+export const approveToPermit2 = async (
+  tronWeb: TronWeb,
+  permit2Address: string,
+  tokenAddress: string,
+  amount: bigint
+) => {
   if (tokenAddress.startsWith('0x')) {
     tokenAddress = toBase58(tokenAddress)
   }
