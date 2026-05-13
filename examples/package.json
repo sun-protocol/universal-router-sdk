@@ -1,0 +1,21 @@
+{
+  "name": "sdk-examples",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@sun-protocol/permit2-sdk": "^1.0.0",
+    "@sun-protocol/universal-router-sdk": "file:.."
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.9.2",
+    "dotenv": "^16.6.1"
+  }
+}

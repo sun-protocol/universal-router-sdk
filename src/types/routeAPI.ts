@@ -11,6 +11,8 @@ export interface RouteData {
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
+  amountOutMinimum: string
+  amountOutMinimumRaw: string
   inUsd: string
   outUsd: string
   impact: string
@@ -22,6 +24,8 @@ export interface RouteData {
   poolVersions: string[]
   poolKeys: (PoolKey | null)[]
   stepAmountsOut: string[]
+  amountInReferralBips?: number
+  amountOutReferralBips?: number
 }
 
 export interface RouterAPIResponse {

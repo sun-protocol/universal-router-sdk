@@ -34,16 +34,26 @@ import {
 import { Hex, zeroAddress } from 'viem'
 import { ACTIONS, ACTION_CONSTANTS } from '../packages/v4/constants/actions'
 
+const DEBUG_JSON_INDENT = 2
+
+function debugJsonReplacer(_key: string, value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return value.toString()
+  }
+  return value
+}
+
 export class TradePlanner extends RoutePlanner {
   private context: SwapExecutionContext
   private debugMode: boolean
+  /** Collected when debug mode is on; flushed as one JSON object at the end of `encode()`. */
+  private debugEncodeSteps: Array<Record<string, unknown>> = []
 
   constructor(
     public routes: SwapTradeRoute[],
     debugMode: boolean = false,
     options: SwapExecutionOptions = {
       permitOptions: {
-        permitEnabled: false,
         permit: undefined,
       },
       tradeSpiltOptions: {
@@ -65,25 +75,78 @@ export class TradePlanner extends RoutePlanner {
     this.debugMode = debugMode
   }
 
+  /** Appends one encode step; printed once at end of `encode()` as a single JSON document. */
+  private debugLog(step: string, data: Record<string, unknown>): void {
+    if (!this.debugMode) return
+    this.debugEncodeSteps.push({ step, ...data })
+  }
+
   encode(): void {
+    if (this.debugMode) {
+      this.debugEncodeSteps = []
+    }
+    try {
+      this.encodeInner()
+    } finally {
+      if (this.debugMode) {
+        const payload = JSON.stringify(
+          { planner: 'TradePlanner.encode', steps: this.debugEncodeSteps },
+          debugJsonReplacer,
+          DEBUG_JSON_INDENT
+        )
+        console.log(payload)
+      }
+    }
+  }
+
+  private encodeInner(): void {
     if (this.context.plans.length === 0) {
       throw new Error('No plans to encode')
     }
 
-    if (this.context.options?.permitOptions?.permitEnabled && this.context.options?.permitOptions?.permit) {
+    const referral = this.context.options?.referralOptions
+    const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
+
+    this.validateReferralOptions()
+
+    if (this.context.options?.permitOptions?.permit) {
       this.addPermit(this.context.options?.permitOptions?.permit)
     }
-    if (!(this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false)) {
-      for (const plan of this.context.plans) {
-        if (plan.sections.length === 0) {
-          throw new Error('No sections to encode')
+
+    if (!isOneShotTransfer) {
+      if (referral?.mode === 'input') {
+        // Case 3: non-oneShotTransfer + input deduction
+        // Per plan: transfer to router, PAY_REFERRAL, then swaps from CONTRACT_BALANCE
+        for (const plan of this.context.plans) {
+          if (plan.sections.length === 0) throw new Error('No sections to encode')
+          if (!plan.input.isNative) {
+            this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, plan.amountIn)
+          }
+          this.addPayReferral(plan.input, referral.projectAddress, referral.bps)
+          for (const section of plan.sections) {
+            this.addSwap(plan, section)
+          }
+          this.addSweep(plan)
         }
-        for (const section of plan.sections) {
-          this.addSwap(plan, section)
+      } else {
+        // No referral, or Case 4: non-oneShotTransfer + output deduction
+        for (const plan of this.context.plans) {
+          if (plan.sections.length === 0) throw new Error('No sections to encode')
+          for (const section of plan.sections) {
+            this.addSwap(plan, section)
+          }
+          if (referral?.mode === 'output') {
+            this.addPayReferral(plan.output, referral.projectAddress, referral.bps)
+          }
+          this.addSweep(plan)
         }
-        this.addSweep(plan)
       }
     } else {
+      // oneShotTransfer
+      if (referral?.mode === 'output') {
+        throw new Error('Output referral with oneShotTransfer is not supported')
+      }
+
       let totalAmountIn = 0n
       for (const plan of this.context.plans) {
         totalAmountIn += plan.amountIn
@@ -92,6 +155,12 @@ export class TradePlanner extends RoutePlanner {
       if (!firstPlan.input.isNative) {
         this.addPermit2TransferFrom(firstPlan.input, ADDRESS_THIS, totalAmountIn)
       }
+
+      // Case 1: oneShotTransfer + input deduction
+      if (referral?.mode === 'input') {
+        this.addPayReferral(firstPlan.input, referral.projectAddress, referral.bps)
+      }
+
       for (let i = 0; i < this.context.plans.length; i++) {
         this.context.plans[i].spiltOptions = {
           enabled: true,
@@ -108,9 +177,7 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private addPermit(permit: Permit2Signature) {
-    if (this.debugMode) {
-      console.log('Permit params', 'permit', permit, 'signature', permit.signature)
-    }
+    this.debugLog('PERMIT2_PERMIT', { permit, signature: permit.signature })
 
     this.addCommand(CommandType.PERMIT2_PERMIT, [permit, permit.signature])
   }
@@ -119,9 +186,7 @@ export class TradePlanner extends RoutePlanner {
     const tokenHex = token.hex
     const recipientHex = recipient.hex
 
-    if (this.debugMode) {
-      console.log('Permit2TransferFrom params', 'token', tokenHex, 'recipient', recipientHex, 'amount', amount)
-    }
+    this.debugLog('PERMIT2_TRANSFER_FROM', { token: tokenHex, recipient: recipientHex, amount })
 
     this.addCommand(CommandType.PERMIT2_TRANSFER_FROM, [tokenHex, recipientHex, amount])
   }
@@ -131,9 +196,11 @@ export class TradePlanner extends RoutePlanner {
     const recipient = plan.recipient ? plan.recipient : MSG_SENDER
     const amountOutMinimum = plan.minimumAmountOut
 
-    if (this.debugMode) {
-      console.log('Sweep params', 'token', token, 'recipient', recipient, 'amountOutMinimum', amountOutMinimum)
-    }
+    this.debugLog('SWEEP', {
+      token: { hex: token.hex, base58: token.base58, isNative: token.isNative },
+      recipient: { hex: recipient.hex, base58: recipient.base58 },
+      amountOutMinimum,
+    })
 
     this.addCommand(CommandType.SWEEP, [token.hex, recipient.hex, amountOutMinimum])
   }
@@ -180,14 +247,10 @@ export class TradePlanner extends RoutePlanner {
     const amountOutMinimum = this.getMinimumAmountOut(plan, section)
 
     if (wrap) {
-      if (this.debugMode) {
-        console.log('WTRX wrap params', 'recipient', recipient, 'amountIn', amountIn)
-      }
+      this.debugLog('WRAP_ETH', { recipient, amountIn })
       this.addCommand(CommandType.WRAP_ETH, [recipient, amountIn])
     } else {
-      if (this.debugMode) {
-        console.log('WTRX unwrap params', 'recipient', recipient, 'amountOutMinimum', amountOutMinimum)
-      }
+      this.debugLog('UNWRAP_WETH', { recipient, amountOutMinimum })
       this.addCommand(CommandType.UNWRAP_WETH, [recipient, amountOutMinimum])
     }
   }
@@ -203,21 +266,7 @@ export class TradePlanner extends RoutePlanner {
     const path = encodeV1RouteToPath(section)
     const payerIsUser = this.getPayerIsUser(section)
 
-    if (this.debugMode) {
-      console.log(
-        'V1 swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('V1_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, payerIsUser })
 
     this.addCommand(CommandType.V1_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, path, payerIsUser])
 
@@ -235,21 +284,7 @@ export class TradePlanner extends RoutePlanner {
     const path = encodeV2RouteToPath(section)
     const payerIsUser = this.getPayerIsUser(section)
 
-    if (this.debugMode) {
-      console.log(
-        'V2 swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('V2_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, payerIsUser })
 
     this.addCommand(CommandType.V2_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, path, payerIsUser])
   }
@@ -265,25 +300,15 @@ export class TradePlanner extends RoutePlanner {
     const { encodedPath, path, types } = encodeV3RouteToPath(section)
     const payerIsUser = this.getPayerIsUser(section)
 
-    if (this.debugMode) {
-      console.log(
-        'V3 swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'types',
-        types,
-        'encodedPath',
-        encodedPath,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('V3_SWAP_EXACT_IN', {
+      recipient,
+      amountIn,
+      amountOutMinimum,
+      path,
+      types,
+      encodedPath,
+      payerIsUser,
+    })
 
     this.addCommand(CommandType.V3_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, encodedPath, payerIsUser])
   }
@@ -312,9 +337,7 @@ export class TradePlanner extends RoutePlanner {
     const amountIn = this.getAmountIn(plan, section)
     const payerIsUser = this.getPayerIsUser(section)
 
-    if (this.debugMode) {
-      console.log('V4 init swap params', 'amountIn', amountIn, 'payerIsUser', payerIsUser)
-    }
+    this.debugLog('V4_SETTLE', { amountIn, payerIsUser, currencyIn: section.currencyInput.hex })
 
     planner.add(ACTIONS.SETTLE, [section.currencyInput.hex, amountIn, payerIsUser])
   }
@@ -326,9 +349,7 @@ export class TradePlanner extends RoutePlanner {
 
     const recipient = this.getRecipient(plan, section).hex
 
-    if (this.debugMode) {
-      console.log('V4 finalize swap params', 'recipient', recipient)
-    }
+    this.debugLog('V4_TAKE', { recipient })
 
     planner.add(ACTIONS.TAKE, [section.currencyOutput.hex, recipient, ACTION_CONSTANTS.OPEN_DELTA])
 
@@ -361,9 +382,7 @@ export class TradePlanner extends RoutePlanner {
       amountOutMinimum: this.getMinimumAmountOut(plan, section),
     }
 
-    if (this.debugMode) {
-      console.log('V4 singlehop swap params', 'encodedPoolKey', encodedPoolKey, 'swapParams', swapParams)
-    }
+    this.debugLog('V4_CL_SWAP_EXACT_IN_SINGLE', { encodedPoolKey, swapParams })
 
     planner.add(ACTIONS.CL_SWAP_EXACT_IN_SINGLE, [swapParams])
   }
@@ -396,9 +415,7 @@ export class TradePlanner extends RoutePlanner {
       }),
     }
 
-    if (this.debugMode) {
-      console.log('V4 multihop swap params', 'swapParams', swapParams)
-    }
+    this.debugLog('V4_CL_SWAP_EXACT_IN', { swapParams })
 
     planner.add(ACTIONS.CL_SWAP_EXACT_IN, [swapParams])
   }
@@ -415,23 +432,7 @@ export class TradePlanner extends RoutePlanner {
 
     const { path, flags } = encodeStableRouteToPathAndFlags(section)
 
-    if (this.debugMode) {
-      console.log(
-        'Stable swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'flags',
-        flags,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('STABLE_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, flags, payerIsUser })
 
     this.addCommand(CommandType.STABLE_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, path, flags, payerIsUser])
   }
@@ -448,23 +449,7 @@ export class TradePlanner extends RoutePlanner {
 
     const { path, flags } = encodePSMSwapToPathAndFlags(section)
 
-    if (this.debugMode) {
-      console.log(
-        'PSM swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'flags',
-        flags,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('PSM_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, flags, payerIsUser })
 
     this.addCommand(CommandType.PSM_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, path, flags, payerIsUser])
   }
@@ -481,23 +466,7 @@ export class TradePlanner extends RoutePlanner {
 
     const { path, flags } = encodeHTXSunSwapToPathAndFlags(section)
 
-    if (this.debugMode) {
-      console.log(
-        'HTX Sun swap params',
-        'recipient',
-        recipient,
-        'amountIn',
-        amountIn,
-        'amountOutMinimum',
-        amountOutMinimum,
-        'path',
-        path,
-        'flags',
-        flags,
-        'payerIsUser',
-        payerIsUser
-      )
-    }
+    this.debugLog('HTX_SUN_SWAP_IN', { recipient, amountIn, amountOutMinimum, path, flags, payerIsUser })
 
     this.addCommand(CommandType.HTX_SUN_SWAP_IN, [recipient, amountIn, amountOutMinimum, path, flags, payerIsUser])
   }
@@ -514,6 +483,11 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private getAmountIn(plan: SwapExecutionPlan, section: SwapSection): bigint {
+    // Case 3: funds already transferred to router via explicit PERMIT2_TRANSFER_FROM
+    if (this.isInputReferralWithExplicitTransfer()) {
+      return CONTRACT_BALANCE
+    }
+
     if (
       section.type === RouteType.V1 ||
       section.type === RouteType.STABLE ||
@@ -559,9 +533,13 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private getPayerIsUser(section: SwapSection): boolean {
+    // Case 3: funds already in the router from explicit transfer
+    if (this.isInputReferralWithExplicitTransfer()) {
+      return false
+    }
+
     return (
       section.isFirstSection &&
-      (this.context.options?.permitOptions?.permitEnabled ?? false) &&
       !section.currencyInput.isNative &&
       !this.context.options?.tradeSpiltOptions?.oneShotTransfer
     )
@@ -597,5 +575,28 @@ export class TradePlanner extends RoutePlanner {
     }
 
     throw new Error('Invalid steps no mid currency')
+  }
+
+  private addPayReferral(token: Currency, projectAddress: string, bps: number) {
+    const project = new Address(projectAddress)
+    this.debugLog('PAY_REFERRAL', { token: token.hex, project: project.hex, bps })
+    this.addCommand(CommandType.PAY_REFERRAL, [token.hex, project.hex, BigInt(bps)])
+  }
+
+  private isInputReferralWithExplicitTransfer(): boolean {
+    const referral = this.context.options?.referralOptions
+    const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
+    return !!referral && referral.mode === 'input' && !isOneShotTransfer
+  }
+
+  private validateReferralOptions() {
+    const referral = this.context.options?.referralOptions
+    if (!referral) return
+    if (!referral.projectAddress || referral.projectAddress.length === 0) {
+      throw new Error('referralOptions.projectAddress is required')
+    }
+    if (!Number.isInteger(referral.bps) || referral.bps < 0 || referral.bps > 10000) {
+      throw new Error('referralOptions.bps must be an integer between 0 and 10000')
+    }
   }
 }
