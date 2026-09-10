@@ -35,7 +35,7 @@ export function encodeV2RouteToPath(section: SwapSection): Hex[] {
   return path.map(currency => currency.hex)
 }
 
-export function encodeV3RouteToPath(section: SwapSection): {
+export function encodeV3RouteToPath(section: SwapSection, exactOutput = false): {
   encodedPath: Hex
   path: (number | string)[]
   types: string[]
@@ -78,6 +78,10 @@ export function encodeV3RouteToPath(section: SwapSection): {
   }
 
   // const encodedPath = section.isExactOutput ? encodePacked(types.reverse(), path.reverse()) : encodePacked(types, path)
+  if (exactOutput) {
+    types.reverse()
+    path.reverse()
+  }
   const encodedPath = encodePacked(types, path)
   return { encodedPath, path, types }
 }

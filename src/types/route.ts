@@ -15,7 +15,23 @@ export enum RouteType {
   WTRX,
 }
 
+export type TradeType = 'EXACT_IN' | 'EXACT_OUT'
+
+export interface ExactOutAmounts {
+  maximumAmountIn: bigint
+  amountOut: bigint
+  grossAmountOut: bigint
+  inputReferral: bigint
+  outputReferral: bigint
+  inputReferralBips: number
+  outputReferralBips: number
+  stepAmountsIn: bigint[]
+  stepAmountsOut: bigint[]
+}
+
 export interface SwapTradeRoute {
+  tradeType?: TradeType
+  exactOut?: ExactOutAmounts
   pools: Pool[]
   input: Currency
   output: Currency
@@ -25,6 +41,8 @@ export interface SwapTradeRoute {
 }
 
 export interface SwapExecutionPlan {
+  tradeType?: TradeType
+  exactOut?: ExactOutAmounts
   path: Currency[]
 
   input: Currency

@@ -33,6 +33,7 @@ import {
 } from '../packages/v4/types'
 import { Hex, zeroAddress } from 'viem'
 import { ACTIONS, ACTION_CONSTANTS } from '../packages/v4/constants/actions'
+import { exactOutAddress, validateExactOutRoute } from './exactOut'
 
 const DEBUG_JSON_INDENT = 2
 
@@ -64,6 +65,11 @@ export class TradePlanner extends RoutePlanner {
   ) {
     super()
 
+    if (routes.some(route => route.tradeType === 'EXACT_OUT') &&
+        (routes.length !== 1 || options.tradeSpiltOptions?.enable || options.tradeSpiltOptions?.oneShotTransfer)) {
+      throw new Error('Exact-Out requires one route without split options')
+    }
+
     this.context = {
       plans: [],
       options: options,
@@ -75,6 +81,12 @@ export class TradePlanner extends RoutePlanner {
     this.debugMode = debugMode
   }
 
+  /** Exact-Out native budget; zero for ERC20 and legacy Exact-In plans. */
+  get callValue(): bigint {
+    const plan = this.context.plans[0]
+    return plan?.exactOut && plan.input.isNative ? plan.exactOut.maximumAmountIn : 0n
+  }
+
   /** Appends one encode step; printed once at end of `encode()` as a single JSON document. */
   private debugLog(step: string, data: Record<string, unknown>): void {
     if (!this.debugMode) return
@@ -82,11 +94,19 @@ export class TradePlanner extends RoutePlanner {
   }
 
   encode(): void {
+    const commands = this.commands
+    const inputCount = this.inputs.length
     if (this.debugMode) {
       this.debugEncodeSteps = []
     }
     try {
       this.encodeInner()
+    } catch (error) {
+      if (this.context.plans.some(plan => plan.tradeType === 'EXACT_OUT')) {
+        this.commands = commands
+        this.inputs.length = inputCount
+      }
+      throw error
     } finally {
       if (this.debugMode) {
         const payload = JSON.stringify(
@@ -108,6 +128,11 @@ export class TradePlanner extends RoutePlanner {
     const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
 
     this.validateReferralOptions()
+
+    if (this.context.plans[0].tradeType === 'EXACT_OUT') {
+      this.encodeExactOut(this.context.plans[0])
+      return
+    }
 
     if (this.context.options?.permitOptions?.permit) {
       this.addPermit(this.context.options?.permitOptions?.permit)
@@ -176,6 +201,44 @@ export class TradePlanner extends RoutePlanner {
     }
   }
 
+  private encodeExactOut(plan: SwapExecutionPlan): void {
+    validateExactOutRoute({ ...plan, pools: plan.sections.flatMap(section => section.pools) })
+    const amounts = plan.exactOut!
+    const pureWrap = plan.sections.length === 1 && plan.sections[0].type === RouteType.WTRX
+    const referral = this.context.options?.referralOptions
+    const bps = amounts.inputReferralBips || amounts.outputReferralBips
+    const mode = amounts.inputReferralBips ? 'input' : 'output'
+    if (bps ? !referral || referral.mode !== mode || referral.bps !== bps : referral && referral.bps !== 0) {
+      throw new Error('Exact-Out referral options must match the quote')
+    }
+    if (referral) exactOutAddress(referral.projectAddress)
+    if (this.context.options?.tradeSpiltOptions?.enable || this.context.options?.tradeSpiltOptions?.oneShotTransfer) {
+      throw new Error('Exact-Out split options are not supported')
+    }
+    if (this.context.options?.permitOptions?.permit) this.addPermit(this.context.options.permitOptions.permit)
+
+    if (amounts.inputReferralBips) {
+      if (!plan.input.isNative) this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, plan.amountIn)
+      this.addPayReferral(plan.input, referral!.projectAddress, referral!.bps)
+      if (!pureWrap && !plan.input.isNative && amounts.maximumAmountIn > plan.amountIn) {
+        this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, amounts.maximumAmountIn - plan.amountIn)
+      }
+    } else if (pureWrap && !plan.input.isNative) {
+      this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, plan.amountIn)
+    }
+    for (const section of plan.sections) this.addSwap(plan, section)
+    if (amounts.outputReferralBips) this.addPayReferral(plan.output, referral!.projectAddress, referral!.bps)
+    this.addSweep(plan)
+
+    if (plan.input.isNative || amounts.inputReferralBips) {
+      const recipient = plan.recipient ?? MSG_SENDER
+      if (!pureWrap && plan.sections[0].type === RouteType.WTRX) {
+        this.addCommand(CommandType.UNWRAP_WETH, [ADDRESS_THIS.hex, 0n])
+      }
+      this.addCommand(CommandType.SWEEP, [plan.input.hex, recipient.hex, 0n])
+    }
+  }
+
   private addPermit(permit: Permit2Signature) {
     this.debugLog('PERMIT2_PERMIT', { permit, signature: permit.signature })
 
@@ -194,7 +257,7 @@ export class TradePlanner extends RoutePlanner {
   private addSweep(plan: SwapExecutionPlan) {
     const token = plan.output
     const recipient = plan.recipient ? plan.recipient : MSG_SENDER
-    const amountOutMinimum = plan.minimumAmountOut
+    const amountOutMinimum = plan.exactOut?.amountOut ?? plan.minimumAmountOut
 
     this.debugLog('SWEEP', {
       token: { hex: token.hex, base58: token.base58, isNative: token.isNative },
@@ -243,7 +306,9 @@ export class TradePlanner extends RoutePlanner {
     const wrap = section.currencyInput.isNative
 
     const recipient = this.getRecipient(plan, section).hex
-    const amountIn = this.getAmountIn(plan, section)
+    const amountIn = plan.exactOut
+      ? (plan.sections.length === 1 ? plan.exactOut.grossAmountOut : plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral)
+      : this.getAmountIn(plan, section)
     const amountOutMinimum = this.getMinimumAmountOut(plan, section)
 
     if (wrap) {
@@ -269,8 +334,6 @@ export class TradePlanner extends RoutePlanner {
     this.debugLog('V1_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, payerIsUser })
 
     this.addCommand(CommandType.V1_SWAP_EXACT_IN, [recipient, amountIn, amountOutMinimum, path, payerIsUser])
-
-    //TODO: add V1 swap exact out
   }
 
   private addV2Swap(plan: SwapExecutionPlan, section: SwapSection) {
@@ -283,6 +346,12 @@ export class TradePlanner extends RoutePlanner {
     const amountOutMinimum = this.getMinimumAmountOut(plan, section)
     const path = encodeV2RouteToPath(section)
     const payerIsUser = this.getPayerIsUser(section)
+
+    if (plan.exactOut) {
+      this.addCommand(CommandType.V2_SWAP_EXACT_OUT, [recipient, plan.exactOut.grossAmountOut,
+        plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral, path, payerIsUser])
+      return
+    }
 
     this.debugLog('V2_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, payerIsUser })
 
@@ -297,8 +366,14 @@ export class TradePlanner extends RoutePlanner {
     const recipient = this.getRecipient(plan, section).hex
     const amountIn = this.getAmountIn(plan, section)
     const amountOutMinimum = this.getMinimumAmountOut(plan, section)
-    const { encodedPath, path, types } = encodeV3RouteToPath(section)
+    const { encodedPath, path, types } = encodeV3RouteToPath(section, !!plan.exactOut)
     const payerIsUser = this.getPayerIsUser(section)
+
+    if (plan.exactOut) {
+      this.addCommand(CommandType.V3_SWAP_EXACT_OUT, [recipient, plan.exactOut.grossAmountOut,
+        plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral, encodedPath, payerIsUser])
+      return
+    }
 
     this.debugLog('V3_SWAP_EXACT_IN', {
       recipient,
@@ -331,6 +406,7 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private initV4Swap(planner: ActionsPlanner, plan: SwapExecutionPlan, section: SwapSection) {
+    if (plan.exactOut) return
     if (section.type !== RouteType.V4) {
       throw new Error('V4 swap must be a V4 pool')
     }
@@ -349,11 +425,20 @@ export class TradePlanner extends RoutePlanner {
 
     const recipient = this.getRecipient(plan, section).hex
 
+    if (plan.exactOut) {
+      if (this.getPayerIsUser(section)) {
+        planner.add(ACTIONS.SETTLE_ALL, [section.currencyInput.hex,
+          plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral])
+      } else {
+        planner.add(ACTIONS.SETTLE, [section.currencyInput.hex, ACTION_CONSTANTS.OPEN_DELTA, false])
+      }
+    }
+
     this.debugLog('V4_TAKE', { recipient })
 
     planner.add(ACTIONS.TAKE, [section.currencyOutput.hex, recipient, ACTION_CONSTANTS.OPEN_DELTA])
 
-    if (section.isFirstSection) {
+    if (section.isFirstSection && !plan.exactOut) {
       planner.add(ACTIONS.TAKE, [section.currencyInput.hex, recipient, ACTION_CONSTANTS.OPEN_DELTA])
     }
 
@@ -374,6 +459,17 @@ export class TradePlanner extends RoutePlanner {
       parameters: this.getParameters(pool.parameters),
     }
 
+    if (plan.exactOut) {
+      planner.add(ACTIONS.CL_SWAP_EXACT_OUT_SINGLE, [{
+        poolKey: encodedPoolKey,
+        zeroForOne: section.currencyInput.Equal(pool.currency0),
+        hookData: '0x',
+        amountOut: plan.exactOut.grossAmountOut,
+        amountInMaximum: plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral,
+      }])
+      return
+    }
+
     const swapParams: EncodedSingleSwapInParams = {
       poolKey: encodedPoolKey,
       zeroForOne: section.currencyInput.Equal(pool.currency0),
@@ -388,6 +484,23 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private addV4SwapMultiHop(planner: ActionsPlanner, plan: SwapExecutionPlan, section: SwapSection) {
+    if (plan.exactOut) {
+      let currency = section.currencyInput
+      const path = section.pools.map(pool => {
+        if (pool.type !== PoolType.V4) throw new Error('Pool must be a V4 pool')
+        const intermediateCurrency = currency.hex
+        currency = currency.Equal(pool.currency0) ? pool.currency1 : pool.currency0
+        return { intermediateCurrency, fee: pool.fee, hooks: pool.hooks.hex,
+          hookData: '0x' as Hex, parameters: this.getParameters(pool.parameters) }
+      })
+      // The local router iterates this array backwards; each entry names the forward input.
+      planner.add(ACTIONS.CL_SWAP_EXACT_OUT, [{
+        currencyOut: section.currencyOutput.hex, path,
+        amountOut: plan.exactOut.grossAmountOut,
+        amountInMaximum: plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral,
+      }])
+      return
+    }
     const swapParams: EncodedMultiSwapInParams = {
       amountIn: ACTION_CONSTANTS.OPEN_DELTA,
       amountOutMinimum: this.getMinimumAmountOut(plan, section),
@@ -448,6 +561,12 @@ export class TradePlanner extends RoutePlanner {
     const payerIsUser = this.getPayerIsUser(section)
 
     const { path, flags } = encodePSMSwapToPathAndFlags(section)
+
+    if (plan.exactOut) {
+      this.addCommand(CommandType.PSM_SWAP_EXACT_OUT, [recipient, plan.exactOut.grossAmountOut,
+        plan.exactOut.maximumAmountIn - plan.exactOut.inputReferral, path, flags, payerIsUser])
+      return
+    }
 
     this.debugLog('PSM_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, flags, payerIsUser })
 
@@ -533,6 +652,8 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private getPayerIsUser(section: SwapSection): boolean {
+    const exactOut = this.context.plans[0]?.exactOut
+    if (exactOut) return section.isFirstSection && !section.currencyInput.isNative && exactOut.inputReferralBips === 0
     // Case 3: funds already in the router from explicit transfer
     if (this.isInputReferralWithExplicitTransfer()) {
       return false
@@ -578,7 +699,7 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private addPayReferral(token: Currency, projectAddress: string, bps: number) {
-    const project = new Address(projectAddress)
+    const project = new Address(this.context.plans[0]?.exactOut ? exactOutAddress(projectAddress) : projectAddress)
     this.debugLog('PAY_REFERRAL', { token: token.hex, project: project.hex, bps })
     this.addCommand(CommandType.PAY_REFERRAL, [token.hex, project.hex, BigInt(bps)])
   }

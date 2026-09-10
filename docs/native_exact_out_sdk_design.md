@@ -1,7 +1,7 @@
 # 协议原生 Exact-Out SDK 设计方案
 
 日期：2026-09-09  
-状态：待实施；本文描述目标设计，不代表临时草稿已完成或验证通过。
+状态：SDK 工作区已实现并进行本地执行验证；具体支持范围以本文及 README 的限制为准，尚未验证线上部署及任意 Hook 池。
 
 ## 1. 目标与边界
 
@@ -21,13 +21,13 @@
 | --- | --- |
 | 实际 SDK 仓库 | `sun-protocol/universal-router-sdk`，`feature/native-exact-out` |
 | SDK commit | `ed48e13d793d19374a358101f162e53b6cec391a` |
-| quote_service commit | `2a2d6b106a1cec5816deec847596725f4b283298` |
+| quote_service commit | `9c1c3e58b9e9cf53624be8b8b416b03a58c60509` |
 | 本地 Router commit | `fbd1a93964d159b8c39450652c2285b4dbffc1c1` |
 | 主要参考：Pancake Router SDK | 官方 npm 发布包 `@pancakeswap/universal-router-sdk@1.5.3` |
 | 主要参考：Pancake Infinity SDK | 官方 npm 发布包 `@pancakeswap/infinity-sdk@1.0.9` |
 | 补充参考：Uniswap | 2026-09-09 查阅的 `Uniswap/sdks` main；链接可能随后更新 |
 
-实际 SDK 当前未应用临时目录中的实现。后续按本文重新整理，不能直接复制草稿作为完成结果。
+实现位于当前 SDK 工作区，复用现有 TradePlanner；临时目录只用于运行实际 Router 及其依赖的合约测试，不作为 SDK 交付位置。
 
 ## 2. PancakeSwap 参考与本地适配
 
@@ -41,7 +41,7 @@
 
 Pancake 的 `TradePlanner.addSwapCommand` 在同一流程中按 tradeType 选择 V2、V3、StableSwap 命令；Infinity 单跳、多跳同样在共用方法中选择 Exact-In 或 Exact-Out action。V3 的路径编码携带 exactOutput 标记。其 `parseSwapTradeContext` 负责路径分段和付款来源，`returnChanges` 负责剩余包装币转换。[Router SDK 1.5.3 官方发布包](https://www.npmjs.com/package/@pancakeswap/universal-router-sdk/v/1.5.3)
 
-本地沿用相同职责划分，在现有协议编码方法内增加分支；不导入整套 SmartRouterTrade，不新增另一套完整 TradePlanner。Pancake 支持的 StableSwap、Infinity Bin 不自动成为本地支持范围；本地 V1、PSM 仍以实际合约为准。
+本地沿用相同职责划分，在现有协议编码方法内增加分支；不导入整套 SmartRouterTrade，不新增另一套完整 TradePlanner。Pancake 支持的 StableSwap、Infinity Bin 不自动成为本地支持范围；本地 PSM 仍以实际合约为准，V1 Exact-Out 暂不支持。
 
 ### 2.3 Infinity 的付款与退款
 
@@ -70,7 +70,7 @@ ActionsPlanner 是动作编码器，不意味着它定义的所有动作均能�
 | 本地 V4_SWAP 的单条命令 input 为 abi.encode(bytes actions, bytes[] params)，与 Pancake 对应布局一致 | 复用现有 createCommand 的双参数编码，不额外包一层 abi.encode(bytes)；动作编号和内部结构仍以本地合约为准 |
 | PAY_REFERRAL 按 Router 当前整笔代币余额计算，并记账到 ReferralVault | 不能替换成普通转账；ERC20 输入分佣隔离滑点预留，TRX 输入分佣按最大预算计算，输出分佣隔离退款 |
 | Router 执行结束将收集到的剩余代币转入 safeVault | 本次用户退款必须在结束清扫前完成，不依赖 safeVault 退款 |
-| V1/V2 Exact-Out 内部反算后正向交换，可能有输出余量 | 成功条件是净输出至少达到目标，余量归 recipient |
+| V2 Exact-Out 内部反算后正向交换，可能有输出余量 | 成功条件是净输出至少达到目标，余量归 recipient |
 
 本地证据：Router 的 `contracts/base/Dispatcher.sol`、`contracts/modules/Payments.sol`、`contracts/UniversalRouter.sol`、`contracts/modules/sunswap/`，以及其 `lib/sunswap-v4-periphery/contracts/V4Router.sol`。
 
@@ -102,10 +102,11 @@ Uniswap 用于对照原生币预算、退款和不足额输出保护。其 V4 �
 | amountOutRawReferral | 报价毛输出对应的输出分佣 |
 | amountInReferralBips / amountOutReferralBips | 对应费率，当前不同时启用 |
 | stepAmountsInRaw / stepAmountsOutRaw | 按 tokens 正向顺序排列的逐跳预计输入及输出目标 |
-| stepExecutionModes | 各跳执行方式，用于验证支持范围 |
 | poolVersions / poolKeys / poolFees | 协议与池信息；V4 编码以 poolKey 为准 |
 
 外部字段以 `quote_service/graph/quote.go` 当前结构为准，不沿用临时草稿中可能拼错的字段名。格式化金额只用于展示，运算和编码一律使用 raw 字符串转 bigint。
+
+兼容 QS 的现有响应格式：poolFees 按路径跳数读取，忽略末尾展示用的 "0"。Exact-Out 与 Exact-In 一致，优先将当前网络的 TRX/WTRX 币对识别为包装，不由 poolVersions 区分包装与真实交换，兼容 QS 的 v2 标记。不再返回或要求逐跳执行模式字段；SDK 按币对和整笔 tradeType 编码。仍校验逐跳金额数组长度及入口/出口边界。
 
 内部为 SwapTradeRoute 和 SwapExecutionPlan 增加可选交易类型及 Exact-Out 金额详情；详情集中保存 maximumAmountIn、目标输出、毛输出、分佣及逐跳数据。旧的 amountIn、minimumAmountOut 保持原语义；Exact-Out 编码明确读取目标输出与最大输入，不能把 amountIn 当作固定扣款。
 
@@ -133,18 +134,21 @@ SDK 直接使用 QS 返回的 Tmax、F、T 和 G，仅做字段与预算一致�
 
 ## 4. 路径与协议编码
 
-沿用 buildExecutionFromRoute 的分段能力，在 Exact-Out 分支验证整个路径只有一个可执行原生交换域；入口 WRAP、出口 UNWRAP 为边界转换，不算协议混合。
+沿用 buildExecutionFromRoute 的分段能力，在 Exact-Out 分支验证整个路径至多包含一个可执行原生交换域，允许单跳纯 TRX/WTRX 包装；入口 WRAP、出口 UNWRAP 为边界转换，不算协议混合。
 
 | 路径 | 编码方案 |
 | --- | --- |
-| V1 多跳 | 一个 V1_SWAP_EXACT_OUT，保留完整路径中的 TRX 中间节点 |
+| V1 | 暂不支持 Exact-Out，编码前拒绝 |
 | V2 多跳 | 一个 V2_SWAP_EXACT_OUT，完整正向地址数组 |
 | V3 多跳 | 一个 V3_SWAP_EXACT_OUT，代币和费率整体反向编码 |
 | V4 单跳/多跳 | 一个 V4_SWAP，内部选择原生 Exact-Out action，按本地合约定义编码路径 |
+| 纯 TRX ↔ WTRX | 单跳 WRAP_ETH 或 UNWRAP_WETH，资金处理见第 5.5 节 |
 | PSM | 当前服务端允许的单池、币对、方向、flag 及粒度，通过 PSM 原生命令执行 |
 | 不同协议混合、拆单、未支持协议 | 编码前报错，不能改成顺序 Exact-In |
 
 V4 沿用 Exact-In 的固定 Manager 部署约定：SDK 不传入或独立校验 Manager，所有 V4 跳由目标 Router 部署时设置的 clPoolManager 执行。调用方使用与报价服务匹配的 Router 部署，不新增 Manager 字段或校验流程。
+
+本次暂不支持 V1 Exact-Out，API 报价与手动构造路径均在编码前拒绝；保留原有 V1 Exact-In。
 
 多跳金额由协议合约反算，不能把报价逐跳输入当成链上固定支付数额。V4 poolKey 的 parameters、hooks、fee 使用完整原始值，不用展示 poolFees 覆盖动态费配置。当前报价没有任意 hookData 时仅编码约定的空 bytes，不虚构 Hook 参数支持。
 
@@ -156,9 +160,9 @@ V4 沿用 Exact-In 的固定 Manager 部署约定：SDK 不传入或独立校验
 
 ### 5.1 ERC20 输入、无输入分佣
 
-V1/V2/V3/PSM 尽量沿用用户付款模式，由合约按实际所需输入扣款，命令中传入最大路由输入 Rmax。没有预扣的滑点预留，就没有这部分 Router 退款。
+V2/V3/PSM 尽量沿用用户付款模式，由合约按实际所需输入扣款，命令中传入最大路由输入 Rmax。没有预扣的滑点预留，就没有这部分 Router 退款。
 
-输出沿用现有 SDK 先到 Router、最后分发的方式。需要出口 UNWRAP 时先完成转换；需要输出分佣时按第 7 节处理；最后 SWEEP(output, recipient, N)。V1/V2 的多余输出一并交付。
+输出沿用现有 SDK 先到 Router、最后分发的方式。需要出口 UNWRAP 时先完成转换；需要输出分佣时按第 7 节处理；最后 SWEEP(output, recipient, N)。V2 的多余输出一并交付。
 
 ### 5.2 原生 TRX 输入
 
@@ -202,6 +206,16 @@ TAKE(outputCurrency, ADDRESS_THIS, OPEN_DELTA)
 
 提供 Exact-Out 示例：解析一条报价、指定 recipient、准备覆盖预算的 Permit2 授权、编码并把 callValue 传给交易调用。不把 bigint 无检查地转换成 JavaScript Number；按交易库实际可接受类型处理，必要时对安全整数范围显式校验。
 
+### 5.5 纯 TRX/WTRX 包装
+
+允许单跳纯包装，不要求路径包含实际交换。逐跳输入与输出必须相等，仍校验预算、分佣和净输出目标。
+
+- TRX → WTRX：callValue = Tmax；如有输入分佣，先按 Tmax 收取 F；仅包装毛目标 G。输出分佣后 SWEEP(WTRX, recipient, N)，最后 SWEEP(TRX, recipient, 0) 退回余款，不再追加解包命令。
+- WTRX → TRX：仅从用户拉取预计总输入 T；如有输入分佣，先扣除 F，再解包剩余 WTRX。不拉取 Tmax - T 的滑点预留。输出分佣后 SWEEP(TRX, recipient, N)。
+
+两种方向都支持无分佣、输入分佣或输出分佣，继续沿用现有余额语义。第 6 节针对实际交换路径的退款碰撞校验不用于拒绝这两种单跳包装。
+
+
 ## 6. 同币循环与余额碰撞
 
 这是本地服务已支持的路径类型，需要验证后覆盖，不能把 Pancake 的普通路径编排当作同币循环已获支持的证据。
@@ -210,7 +224,7 @@ TAKE(outputCurrency, ADDRESS_THIS, OPEN_DELTA)
 
 处理顺序：
 
-1. 用户实际扣款、没有 Router 输入预付款的 V1/V2/V3/PSM 路径，优先验证 Router 只收到兑换产出的普通收尾是否成立。
+1. 用户实际扣款、没有 Router 输入预付款的 V2/V3 路径，支持通过不同池返回输入币种，Router 收尾仅分发兑换输出。V1 Exact-Out 和 PSM 多池不在支持范围。
 2. 有预付款但协议支持直接交付输出的路径，评估仅对 Exact-Out 将交换 recipient 设为最终收款人，再独立退回输入余额；必须同时证明协议自身足额输出约束，不靠包含退款的 SWEEP 检查。
 3. V4 同币循环只有一个币种的净 delta，不能直接套用第 5.3 节：净 delta 可能是 credit，SETTLE_ALL / SETTLE(OPEN_DELTA) 读取 debt 会回滚；即使是 debt，也只代表输入与输出抵消后的净额。须单独证明输入、兑换输出及退款的语义，不能把净额结算当作已支持完整 Exact-Out，也不能靠指定 TAKE 金额证明输出足额。未验证的组合明确拒绝。
 4. TRX/WTRX 边界转换产生的余额碰撞按同样规则处理，不能只比较用户首尾地址。
@@ -225,11 +239,11 @@ TAKE(outputCurrency, ADDRESS_THIS, OPEN_DELTA)
 
 历史输出余额可能进入 PAY_REFERRAL 的分佣基数，沿用第 1 节的兼容限制；不因此单独禁止输出分佣。没有历史余额时，分佣基数应仅为本次毛输出。
 
-同币路径的未使用输入不能进入输出分佣基数。需要把输出、退款先分离；无法分离的组合不允许按整个混合余额扣费后声称正确。V1/V2 有余量时验证实际分佣和最终净输出，而不是要求分佣总与报价值完全相同。
+同币路径的未使用输入不能进入输出分佣基数。需要把输出、退款先分离；无法分离的组合不允许按整个混合余额扣费后声称正确。V2 有余量时验证实际分佣和最终净输出，而不是要求分佣总与报价值完全相同。
 
 ### 7.2 输入分佣
 
-ERC20 输入沿用固定报价分佣 F，滑点预留不参与分佣。不同币种且分佣前无其他余额时，流程为：
+ERC20 输入沿用固定报价分佣 F，滑点预留不参与分佣。以下流程用于含实际交换的路径；纯包装按第 5.5 节执行，不拉取滑点预留。不同币种且分佣前无其他余额时，流程为：
 
 ```text
 拉入预计总输入 T
@@ -239,7 +253,7 @@ PAY_REFERRAL(input, project, inputBips)  // 此时基数应为 T
 退回未使用输入
 ```
 
-原生 TRX 输入按最大预算计算输入分佣，不再临时包装滑点预留来隔离基数。无历史余额时流程为：
+原生 TRX 输入按最大预算计算输入分佣，不再临时包装滑点预留来隔离基数。含实际交换且无历史余额时流程如下；纯包装仍按 Tmax 分佣，但只包装 G，见第 5.5 节：
 
 ```text
 callValue = Tmax
@@ -262,7 +276,7 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 | src/core/parseRouteAPIResponse.ts | 按交易类型解析，Exact-Out 校验字段、金额、路径和滑点选项 |
 | src/core/buildExecutionFromRoute.ts | 复用分段；Exact-Out 原生域、拆单限制检查 |
 | src/core/TradePlanner.ts | 复用现有方法职责，补齐 Exact-Out、V4 交换后实际欠款结算、Router 预付款退款和 TRX 最大预算分佣；保持 Exact-In 行为 |
-| src/core/encodePath.ts | V3 增加 exactOutput 参数，默认保持旧行为；V1 仅在 Exact-Out 分支使用完整原生路径，保留 Exact-In 当前首尾地址编码 |
+| src/core/encodePath.ts | V3 增加 exactOutput 参数，默认保持旧行为；V1 Exact-In 保持不变 |
 | src/core/createCommand.ts | 核实已存在的 Exact-Out ABI；只修正本次所需定义 |
 | 对应测试文件 | 解析、命令解码、兼容性及金额边界测试 |
 | examples / README.md | Exact-Out 调用、预算、recipient 退款语义和支持矩阵 |
@@ -275,7 +289,7 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 
 - 缺省类型及显式 EXACT_IN 的既有命令字节保持一致，覆盖各协议、包装、分佣和原有拆单。
 - Exact-Out 响应字段使用真实服务返回样本，测试缺失/错误 raw 字段、数组错位、金额溢出、未知协议、重复池、非法分佣和滑点覆盖。
-- 解码实际 commands/inputs 检查 amountOut、amountInMaximum、V1/V2 完整路径、V3 反向路径、V4 action 顺序和本地 ABI。
+- 解码实际 commands/inputs 检查 amountOut、amountInMaximum、V1 Exact-Out 拒绝、V2 完整路径、V3 反向路径、V4 action 顺序和本地 ABI。
 - 普通 V4 路径验证交换后结算：用户付款用 SETTLE_ALL(input, Rmax)，Router 付款用 SETTLE(input, OPEN_DELTA, false)，然后 TAKE 输出；不预结算预算或添加常规输入退款 TAKE。V4 命令 input 验证为直接编码的 (bytes actions, bytes[] params)，不得多包一层 bytes；地址、动作及池参数按本地部署校验，记录与 Pancake 预算结算的差异。
 - Exact-Out 编码失败不留下可误用的半成品；示例按每笔交易新建实例、只调用一次 encode() 编写，不要求修改现有追加行为。
 
@@ -285,16 +299,17 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 
 | 维度 | 必测场景 |
 | --- | --- |
-| 协议 | V1/V2/V3/V4 单跳、多跳；PSM 双向与粒度 |
+| 协议 | V1 Exact-Out 准入拒绝；V2/V3/V4 单跳、多跳；PSM 双向与粒度 |
 | 预算 | 实际输入低于、等于、超过最大值；超过时整体回滚 |
 | 输出 | 恰好满足、整数余量、不足额、耗尽流动性、Hook 部分成交 |
+| 纯包装 | TRX ↔ WTRX 双向；无分佣、输入分佣、输出分佣；仅转换所需数量、TRX 余款退款；WTRX 余额与授权仅够 T、低于 Tmax 时仍成功 |
 | 付款 | ERC20、原生 TRX、入口 WRAP、出口 UNWRAP、授权不足；V4 用户付款仅拉实际欠款，覆盖余额/授权低于 Rmax 但足以支付实际欠款；Router 付款仅结算实际欠款并退回 Router 中的预算余款 |
 | 收款 | 默认发送者、第三方 recipient；输出及退款归属一致 |
 | 分佣 | 无分佣、输入、输出、费率不一致、滑点余量、历史余额 |
 | 循环 | 同币与 TRX/WTRX 碰撞，输出不足不能用退款补齐检查 |
 | 清算 | Router 和 PoolManager 无本次用户资金遗留；退款不进入 safeVault |
 
-不足额输出回滚及执行输入分佣 F 的精确匹配，须在无历史余额的基线下验证：ERC20 按 T 计算，TRX 按 Tmax 计算。TRX 还须覆盖 F 大于 QS 报价 F、路由上限缩小、预算不足拒绝及总输入不超过 Tmax。另行注入历史余额，确认并记录 SWEEP 和 PAY_REFERRAL 沿用现有余额语义；历史余额补足输出或进入分佣基数本身不判为本次实现失败。用户输入上限、本次退款归属和 ERC20 输入分佣的滑点预留隔离仍须满足；同币退款补足不足额输出的反例必须回滚或在编码前拒绝，不能套用历史余额例外。
+不足额输出回滚及执行输入分佣 F 的精确匹配，须在无历史余额的基线下验证：ERC20 按 T 计算，TRX 按 Tmax 计算。TRX 还须覆盖执行分佣与 QS 返回的 F 一致、Tmax - F 完整保留路由滑点预算、整数舍入及总输入不超过 Tmax。另行注入历史余额，确认并记录 SWEEP 和 PAY_REFERRAL 沿用现有余额语义；历史余额补足输出或进入分佣基数本身不判为本次实现失败。用户输入上限、本次退款归属和 ERC20 输入分佣的滑点预留隔离仍须满足；同币退款补足不足额输出的反例必须回滚或在编码前拒绝，不能套用历史余额例外。
 
 以成熟 Exact-In 为报价参照时，必须固定同一组池状态。分别从相同初始快照执行，不先改变池状态再做比较。Exact-In 回算只能辅助确认报价数学；SDK 是否正确还要核对交易扣款、交付、分佣、退款和回滚。
 
@@ -305,14 +320,14 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 ## 10. 实施顺序与待解决项
 
 1. 固化 Exact-In 兼容样本，修正字段模型，完成普通无分佣路径。
-2. 实现 V1/V2/V3/PSM 编码；V4 交换后按付款来源选择 SETTLE_ALL 或 SETTLE(OPEN_DELTA, false)，再 TAKE 输出，验证实际扣款、输入上限、Router 预付款退款和输出不足回滚。
+2. 实现 V2/V3/PSM 编码；V4 交换后按付款来源选择 SETTLE_ALL 或 SETTLE(OPEN_DELTA, false)，再 TAKE 输出，验证实际扣款、输入上限、Router 预付款退款和输出不足回滚。
 3. 实现边界转换、recipient 和显式退款，接入 callValue 示例。
 4. 验证循环及余额碰撞，再完善分佣；不把尚未证明的资金拆分流程默认开放。
 5. 完成合约级与兼容性回归、更新支持矩阵，再整理到实际仓库提交。
 
-当前必须解决的开发问题：V4 同币 delta 的正确结算顺序；含包装的输出/退款隔离；ERC20 输入分佣与本次滑点预留的隔离；TRX 最大预算分佣及调整后的路由预算；同币输出分佣；无历史余额基线下的 Hook 不足额输出验证。历史余额隔离不在本次范围内。以上是实现阶段的具体任务，不需要新增任意 payer 或必填 safeVault 接口来替代验证。
+当前必须解决的开发问题：V4 同币 delta 的正确结算顺序；含包装的输出/退款隔离；ERC20 输入分佣与本次滑点预留的隔离；TRX 最大预算分佣与 QS 报价的执行一致性；同币输出分佣；无历史余额基线下的 Hook 不足额输出验证。历史余额隔离不在本次范围内。以上是实现阶段的具体任务，不需要新增任意 payer 或必填 safeVault 接口来替代验证。
 
-当前合约匹配结论：普通路径所需命令、V4 SETTLE_ALL、SETTLE(OPEN_DELTA) 和 TAKE 在本地合约中有对应实现，V4 外层 ABI 已核对一致。这是源码层面的匹配，不代表端到端执行已通过；同币循环和分佣组合仍须完成上述测试后才能声明支持，历史余额按兼容限制验证并记录。
+当前执行证据：`tests/contracts` 通过 FFI 调用编译后的 SDK 生成 calldata，再由实际 Router 执行。V4 使用实际 PoolManager 与流动性；V2/V3/PSM 使用可控池测试实际 Router 的交换与付款模块。覆盖实际欠款、预算回滚、收款与退款、分佣及 PSM 双向兑换；V1 Exact-Out 不在支持范围。Exact-In 命令哈希基线从改动前 git HEAD 生成，包含各协议、包装、分佣及拆单。线上固定区块样本与任意 Hook 池执行尚未验证，不能把可控池证据等同于部署验证。
 
 ## 11. 本地参考文件
 
