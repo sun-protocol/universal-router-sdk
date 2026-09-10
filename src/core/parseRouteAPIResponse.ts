@@ -12,6 +12,7 @@ import {
 } from '../types'
 import { TESTNET_WTRX_ADDRESS, MAINNET_WTRX_ADDRESS, TRX_ADDRESS } from '../constants/constants'
 import { Address } from '../types'
+import { exactOutAddress, parseExactOutAmounts, validateExactOutRoute, validateTradeType } from './exactOut'
 
 export interface ParseRouteOptions {
   /**
@@ -36,22 +37,48 @@ export function parseRouteAPIResponse(
   isTestnet: boolean,
   options?: ParseRouteOptions
 ): SwapTradeRoute {
+  validateTradeType(routeData.tradeType)
+  const exactOut = routeData.tradeType === 'EXACT_OUT' ? parseExactOutAmounts(routeData) : undefined
+  if (exactOut && (options?.slippage != null || options?.slippageBips != null)) {
+    throw new Error('Exact-Out uses the quoted maximum input; slippage overrides are not supported')
+  }
+  const tokens = exactOut ? routeData.tokens.map(exactOutAddress) : routeData.tokens
   const pools: Pool[] = []
   for (let i = 0; i < routeData.poolVersions.length; i++) {
     const poolVersion = routeData.poolVersions[i]
+    if (exactOut) {
+      if (!['v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(poolVersion)) {
+        throw new Error('Unsupported Exact-Out pool version')
+      }
+      const wrapped = (isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS).hex.toLowerCase()
+      const isWrapPair = (tokens[i] === TRX_ADDRESS.hex && tokens[i + 1] === wrapped) ||
+        (tokens[i] === wrapped && tokens[i + 1] === TRX_ADDRESS.hex)
+      if (poolVersion === 'wtrx' && !isWrapPair) {
+        throw new Error('Invalid Exact-Out wrap pair')
+      }
+      const key = routeData.poolKeys[i]
+      if (!isWrapPair && poolVersion === 'v4' && (!key ||
+          exactOutAddress(key.token0) !== [tokens[i], tokens[i + 1]].sort()[0] ||
+          exactOutAddress(key.token1) !== [tokens[i], tokens[i + 1]].sort()[1])) {
+        throw new Error('V4 poolKey does not match route tokens')
+      }
+      if (key) exactOutAddress(key.hooks)
+    }
     const pool = poolVersionToPoolType({
       poolVersionStr: poolVersion,
-      input: routeData.tokens[i],
-      output: routeData.tokens[i + 1],
+      input: tokens[i],
+      output: tokens[i + 1],
       fee: Number(routeData.poolFees[i]),
-      poolKey: routeData.poolKeys[i] ?? undefined,
+      poolKey: exactOut && routeData.poolKeys[i]
+        ? { ...routeData.poolKeys[i]!, hooks: exactOutAddress(routeData.poolKeys[i]!.hooks) }
+        : routeData.poolKeys[i] ?? undefined,
       isTestnet: isTestnet,
     })
     pools.push(pool)
   }
 
   let minimumAmountOut: bigint = 0n
-  if (routeData.amountOutMinimumRaw) {
+  if (!exactOut && routeData.amountOutMinimumRaw) {
     minimumAmountOut = BigInt(routeData.amountOutMinimumRaw)
   }
   if (options && (options.slippage != null || options.slippageBips != null)) {
@@ -78,11 +105,17 @@ export function parseRouteAPIResponse(
   }
 
   const route: SwapTradeRoute = {
+    ...(exactOut ? { tradeType: 'EXACT_OUT' as const, exactOut } : {}),
     pools: pools,
-    input: new Currency(routeData.tokens[0]),
-    output: new Currency(routeData.tokens[routeData.tokens.length - 1]),
+    input: new Currency(tokens[0]),
+    output: new Currency(tokens[tokens.length - 1]),
     amountIn: BigInt(routeData.amountInRaw),
     minimumAmountOut: minimumAmountOut,
+  }
+
+  if (exactOut) {
+    if (!/^\d+$/.test(routeData.amountInRaw)) throw new Error('Invalid Exact-Out amountInRaw')
+    validateExactOutRoute(route)
   }
 
   return route
@@ -111,7 +144,7 @@ export function poolVersionToPoolType({
 
   const wtrxAddress = isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS
 
-  //TODO: workaround for WTRX pool
+  // TRX/WTRX pairs take precedence over the quoted pool version for both trade types.
   if (
     (currency0.Equal(TRX_ADDRESS) && currency1.Equal(wtrxAddress)) ||
     (currency1.Equal(TRX_ADDRESS) && currency0.Equal(wtrxAddress))

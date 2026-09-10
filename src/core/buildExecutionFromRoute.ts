@@ -1,4 +1,5 @@
 import { PoolType, RouteType, SwapSection, SwapTradeRoute, SwapExecutionPlan } from '../types'
+import { validateExactOutRoute, validateTradeType } from './exactOut'
 
 const POOL_TYPE_TO_ROUTE_TYPE: Record<PoolType, RouteType> = {
   [PoolType.V1]: RouteType.V1,
@@ -12,6 +13,8 @@ const POOL_TYPE_TO_ROUTE_TYPE: Record<PoolType, RouteType> = {
 }
 
 export function buildExecutionFromRoute(route: SwapTradeRoute): SwapExecutionPlan {
+  validateTradeType(route.tradeType)
+  if (route.tradeType === 'EXACT_OUT') validateExactOutRoute(route)
   const input = route.input
   const output = route.output
 
@@ -88,6 +91,7 @@ export function buildExecutionFromRoute(route: SwapTradeRoute): SwapExecutionPla
   }
 
   const plan: SwapExecutionPlan = {
+    ...(route.tradeType === 'EXACT_OUT' ? { tradeType: route.tradeType, exactOut: route.exactOut } : {}),
     path: path,
     input: route.input,
     output: route.output,

@@ -42,7 +42,49 @@ console.log(planner.commands) // Hex-encoded command bytes
 console.log(planner.inputs)   // Hex-encoded input array
 ```
 
-## Supported Pool Types
+## Native Exact-Out
+
+Pass one `EXACT_OUT` quote from QS commit `9c1c3e5` or later. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input; do not pass a slippage override or split options.
+
+QS's trailing `poolFees` display entry is ignored. Like Exact-In, Exact-Out treats the network-specific TRX/WTRX pair as wrapping regardless of `poolVersions`, including QS's `v2` label. The quoted execution mode must match `WRAP`/`UNWRAP`; `EXACT_OUT` cannot override pair detection.
+
+```typescript
+const route = parseRouteAPIResponse(quote, false)
+route.recipient = new Address(recipientAddress) // optional; defaults to the sender
+const planner = new TradePlanner([route], false, {
+  // Required for a quote with a nonzero referral fee; mode and bps must match it.
+  referralOptions,
+})
+planner.encode()
+
+// TronWeb callValue is in SUN. Guard conversion if the client requires a number.
+if (planner.callValue > BigInt(Number.MAX_SAFE_INTEGER)) {
+  throw new Error('callValue exceeds the client safe integer range')
+}
+await router.execute(planner.commands, planner.inputs, deadline).send({
+  callValue: Number(planner.callValue),
+})
+```
+
+Import `Address`, `TradePlanner`, and `parseRouteAPIResponse` from this package. For ERC20 input, approve Permit2 on the token and give the Router a Permit2 allowance. Covering `exactOut.maximumAmountIn` allows execution throughout the quoted budget; ordinary user-paid swaps only pull the actual required input. Input-referral swaps pull the budget in two parts so the slippage reserve is excluded from the fee base. V4 settles its actual debt after swapping.
+
+For TRX input, `callValue` is the maximum total input; the input referral is calculated on this maximum, as returned by QS. Unused TRX is refunded (unused WTRX from an entry wrap is unwrapped first). **The configured recipient receives both output and refunds**, including when it differs from the payer. Create a fresh planner and call `encode()` once per transaction; repeated calls append commands.
+
+| Exact-Out route | Encoding support |
+| --- | --- |
+| V1 | Not supported for Exact-Out |
+| V2 / V3 | Single protocol, single or multiple distinct pools |
+| V4 | Single or multiple pools through the Router's fixed Manager; actual-debt settlement, empty hookData |
+| PSM | One production USDT/USDD pool (`usdt20psm`), both directions, with output granularity checks |
+| Wrap / unwrap | Pure TRX ↔ WTRX, or entry/exit wrapping around a supported swap |
+| Same-currency routes | User-paid V2/V3 routes through distinct pools; V4 net-delta loops and prepaid output/refund collisions are rejected |
+| Mixed protocols, splits, Stable, HTX Sun | Rejected for Exact-Out |
+
+Historical Router balances retain Exact-In semantics: SWEEP checks/distributes the total balance and PAY_REFERRAL charges on it. This is distinct from this transaction's refund, which must not satisfy its output minimum or enter its output referral base. Quotes must match the Router deployment. Hook-specific behavior and live deployment state still require execution validation.
+
+A runnable encoding example is in [examples/exact-out/encode.cjs](examples/exact-out/encode.cjs).
+
+## Supported Exact-In Pool Types
 
 | Pool Type | Command | Description |
 |-----------|---------|-------------|

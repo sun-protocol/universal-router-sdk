@@ -7,12 +7,18 @@ export interface PoolKey {
 }
 
 export interface RouteData {
+  tradeType?: 'EXACT_IN' | 'EXACT_OUT'
+  amountInMaximumRaw?: string
+  amountInRawReferral?: string
+  amountOutRawReferral?: string
+  stepAmountsInRaw?: string[]
+  stepAmountsOutRaw?: string[]
   amountIn: string
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
-  amountOutMinimum: string
-  amountOutMinimumRaw: string
+  amountOutMinimum?: string
+  amountOutMinimumRaw?: string
   inUsd: string
   outUsd: string
   impact: string
