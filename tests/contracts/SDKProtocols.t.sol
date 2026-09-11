@@ -135,36 +135,57 @@ contract SDKProtocolsTest is Test, DeployPermit2 {
         return abi.decode(vm.ffi(args), (bytes, bytes[], uint256));
     }
 
-    function test_sdk_v2InputReferralAndRefund() public {
-        pool(a, b, false);
-        (bytes memory commands, bytes[] memory inputs,) = sdk(string.concat(vm.toString(a), ",", vm.toString(b)), "v2", 100, 0, 1 ether, 1 ether);
+    function test_sdk_v2OutputReferralAndActualInput() public {
+        address pair = address(pool(a, b, false));
+        (bytes memory commands, bytes[] memory inputs,) = sdk(string.concat(vm.toString(a), ",", vm.toString(b)), "v2", 0, 100, 1 ether, 1 ether);
         uint256 userBefore = MockERC20(a).balanceOf(alice);
         vm.prank(alice); router.execute(commands, inputs, block.timestamp);
-        uint256 fee = ((uint256(1 ether) - 1) * 10000 / 9900 + 1) / 100;
-        assertEq(MockERC20(a).balanceOf(address(referral)), fee);
-        assertGt(referral.referralBalance(a, recipient), 0);
-        assertGt(MockERC20(a).balanceOf(recipient), 0); // unused budget goes to recipient
-        assertEq(userBefore - MockERC20(a).balanceOf(alice), 2 ether);
+        uint256 gross = 100 ether - MockERC20(b).balanceOf(pair);
+        uint256 fee = gross / 100;
+        assertEq(MockERC20(b).balanceOf(address(referral)), fee);
+        assertEq(MockERC20(a).balanceOf(address(referral)), 0);
+        assertGt(referral.referralBalance(b, recipient), 0);
+        assertEq(MockERC20(a).balanceOf(recipient), 0); // unused budget was never pulled
+        assertLt(userBefore - MockERC20(a).balanceOf(alice), 2 ether);
         assertGe(MockERC20(b).balanceOf(recipient), 1 ether);
         assertEq(MockERC20(a).balanceOf(address(router)), 0);
         assertEq(MockERC20(a).balanceOf(safe), 0);
+        uint256 poolInput = MockERC20(a).balanceOf(pair) - 100 ether;
+        assertGt(poolInput, 0);
+        assertEq(userBefore - MockERC20(a).balanceOf(alice), poolInput);
+        assertEq(gross, MockERC20(b).balanceOf(recipient) + fee);
     }
 
     function test_sdk_v2MultihopOutputReferral() public {
-        pool(a, b, false); pool(b, c, false);
+        address firstPair = address(pool(a, b, false));
+        address secondPair = address(pool(b, c, false));
         (bytes memory commands, bytes[] memory inputs,) = sdk(string.concat(vm.toString(a), ",", vm.toString(b), ",", vm.toString(c)), "v2", 0, 100, 1 ether, 1 ether);
         vm.prank(alice); router.execute(commands, inputs, block.timestamp);
         assertGe(MockERC20(c).balanceOf(recipient), 1 ether);
         assertGt(MockERC20(c).balanceOf(address(referral)), 0);
         assertGt(MockERC20(a).balanceOf(alice), 8 ether);
+        uint256 paid = 10 ether - MockERC20(a).balanceOf(alice);
+        assertGt(paid, 0);
+        assertEq(MockERC20(a).balanceOf(firstPair) - 100 ether, paid);
+        uint256 intermediate = 100 ether - MockERC20(b).balanceOf(firstPair);
+        assertGt(intermediate, 0);
+        assertEq(MockERC20(b).balanceOf(secondPair) - 100 ether, intermediate);
+        assertEq(100 ether - MockERC20(c).balanceOf(secondPair),
+            MockERC20(c).balanceOf(recipient) + MockERC20(c).balanceOf(address(referral)));
+        assertEq(MockERC20(a).balanceOf(address(router)), 0);
+        assertEq(MockERC20(b).balanceOf(address(router)), 0);
+        assertEq(MockERC20(c).balanceOf(address(router)), 0);
     }
 
     function test_sdk_v2ShortOutputRollsBack() public {
-        pool(a, b, false).setShortOutput();
+        SDKPool pair = pool(a, b, false);
+        pair.setShortOutput();
         (bytes memory commands, bytes[] memory inputs,) = sdk(string.concat(vm.toString(a), ",", vm.toString(b)), "v2", 0, 0, 1 ether, 1 ether);
         vm.expectRevert(); vm.prank(alice); router.execute(commands, inputs, block.timestamp);
         assertEq(MockERC20(a).balanceOf(alice), 10 ether);
         assertEq(MockERC20(b).balanceOf(recipient), 0);
+        assertEq(MockERC20(a).balanceOf(address(pair)), 100 ether);
+        assertEq(MockERC20(b).balanceOf(address(pair)), 100 ether);
     }
 
     function test_sdk_v3MultihopCallbackPayment() public {
@@ -211,20 +232,19 @@ contract SDKProtocolsTest is Test, DeployPermit2 {
     }
 
     function test_sdk_pureWrapAndUnwrap() public {
-        for (uint256 mode; mode < 3; mode++) {
-            uint256 inputBips = mode == 1 ? 100 : 0;
-            uint256 outputBips = mode == 2 ? 100 : 0;
+        for (uint256 mode; mode < 2; mode++) {
+            uint256 outputBips = mode == 1 ? 100 : 0;
             uint256 gross = outputBips == 0 ? 1 ether : (uint256(1 ether) - 1) * 10000 / 9900 + 1;
             uint256 nativeBefore = recipient.balance;
             uint256 wrappedBefore = WETH(payable(WRAPPED)).balanceOf(recipient);
             (bytes memory commands, bytes[] memory inputs, uint256 value) = sdk(string.concat(
-                vm.toString(address(0)), ",", vm.toString(WRAPPED)), "v2", inputBips, outputBips, 1 ether, gross);
+                vm.toString(address(0)), ",", vm.toString(WRAPPED)), "v2", 0, outputBips, 1 ether, gross);
             vm.deal(alice, value);
             vm.prank(alice); router.execute{value: value}(commands, inputs, block.timestamp);
             assertEq(WETH(payable(WRAPPED)).balanceOf(recipient) - wrappedBefore, 1 ether);
-            assertEq(recipient.balance - nativeBefore, value - gross - value * inputBips / 10000);
+            assertEq(recipient.balance - nativeBefore, value - gross);
 
-            uint256 total = inputBips == 0 ? gross : (gross - 1) * 10000 / 9900 + 1;
+            uint256 total = gross;
             deal(WRAPPED, alice, total);
             vm.startPrank(alice);
             WETH(payable(WRAPPED)).approve(address(permit2), total);
@@ -232,7 +252,7 @@ contract SDKProtocolsTest is Test, DeployPermit2 {
             vm.stopPrank();
             nativeBefore = recipient.balance;
             (commands, inputs, value) = sdk(string.concat(vm.toString(WRAPPED), ",", vm.toString(address(0))),
-                "v2", inputBips, outputBips, 1 ether, gross);
+                "v2", 0, outputBips, 1 ether, gross);
             assertEq(value, 0);
             vm.prank(alice); router.execute(commands, inputs, block.timestamp);
             assertEq(recipient.balance - nativeBefore, 1 ether);
