@@ -9,6 +9,7 @@ export interface PoolKey {
 export interface RouteData {
   tradeType?: 'EXACT_IN' | 'EXACT_OUT'
   amountInMaximumRaw?: string
+  /** Exact-Out requires "0"; nonzero input referral amounts are rejected. */
   amountInRawReferral?: string
   amountOutRawReferral?: string
   stepAmountsInRaw?: string[]
@@ -17,7 +18,9 @@ export interface RouteData {
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
+  /** Exact-In display minimum; may be absent or empty for Exact-Out. */
   amountOutMinimum?: string
+  /** Exact-In raw minimum; Exact-Out uses amountOutRaw as its net target. */
   amountOutMinimumRaw?: string
   inUsd: string
   outUsd: string
@@ -30,6 +33,7 @@ export interface RouteData {
   poolVersions: string[]
   poolKeys: (PoolKey | null)[]
   stepAmountsOut: string[]
+  /** Exact-Out requires zero or omitted; Exact-In also supports input referral. */
   amountInReferralBips?: number
   amountOutReferralBips?: number
 }

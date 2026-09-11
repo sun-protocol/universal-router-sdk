@@ -11,10 +11,10 @@ if (quote.tradeType !== 'EXACT_OUT') throw new Error('Expected one EXACT_OUT quo
 const route = parseRouteAPIResponse(quote, false)
 if (recipient) route.recipient = new Address(recipient)
 const details = route.exactOut
-const bps = details.inputReferralBips || details.outputReferralBips
+const bps = details.outputReferralBips
 if (bps && !projectAddress) throw new Error('Provide the referral project from the quote request')
 const planner = new TradePlanner([route], false, {
-  referralOptions: bps ? { mode: details.inputReferralBips ? 'input' : 'output', bps, projectAddress } : undefined,
+  referralOptions: bps ? { mode: 'output', bps, projectAddress } : undefined,
 })
 planner.encode()
 if (planner.callValue > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('callValue exceeds TronWeb safe integer range')

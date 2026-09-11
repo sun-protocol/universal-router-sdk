@@ -19,10 +19,13 @@ export type TradeType = 'EXACT_IN' | 'EXACT_OUT'
 
 export interface ExactOutAmounts {
   maximumAmountIn: bigint
+  /** Net output target after referral fees; use for Exact-Out display and validation. */
   amountOut: bigint
   grossAmountOut: bigint
+  /** Retained for quote validation; Exact-Out requires 0n. */
   inputReferral: bigint
   outputReferral: bigint
+  /** Retained for quote validation; Exact-Out requires 0. */
   inputReferralBips: number
   outputReferralBips: number
   stepAmountsIn: bigint[]
@@ -36,6 +39,7 @@ export interface SwapTradeRoute {
   input: Currency
   output: Currency
   amountIn: bigint
+  /** Exact-In minimum. Parsed Exact-Out routes leave this at 0n; use exactOut.amountOut. */
   minimumAmountOut: bigint
   recipient?: Address
 }
@@ -51,6 +55,7 @@ export interface SwapExecutionPlan {
 
   amountIn: bigint
 
+  /** Exact-In minimum; Exact-Out encoding uses exactOut.amountOut instead. */
   minimumAmountOut: bigint
 
   sections: SwapSection[]
@@ -111,6 +116,7 @@ export interface PlanSpiltOptions {
   isLastSpilt: boolean
 }
 
+/** Exact-Out accepts only mode: 'output'; both modes remain available for Exact-In. */
 export type ReferralOptions =
   | {
       mode: 'input'

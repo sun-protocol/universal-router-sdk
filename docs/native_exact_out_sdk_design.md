@@ -1,5 +1,7 @@
 # 协议原生 Exact-Out SDK 设计方案
 
+> 2026-09-11 范围更新：SDK 的 Exact-Out 仅支持无返佣或输出端返佣。输入佣金金额/费率必须为零，`referralOptions.mode='input'`（即使 0 bps）被拒绝；Exact-In 不变。下文输入分佣、双段预扣与 TRX 最大预算收费内容为早期方案记录，已不属于当前实现或待实施范围。当前接入以 README 及返佣设计文档顶部的最终决策为准。本轮只修改 SDK，未修改 QS 或合约。
+
 日期：2026-09-09  
 状态：SDK 工作区已实现并进行本地执行验证；具体支持范围以本文及 README 的限制为准，尚未验证线上部署及任意 Hook 池。
 
@@ -110,6 +112,8 @@ Uniswap 用于对照原生币预算、退款和不足额输出保护。其 V4 �
 
 内部为 SwapTradeRoute 和 SwapExecutionPlan 增加可选交易类型及 Exact-Out 金额详情；详情集中保存 maximumAmountIn、目标输出、毛输出、分佣及逐跳数据。旧的 amountIn、minimumAmountOut 保持原语义；Exact-Out 编码明确读取目标输出与最大输入，不能把 amountIn 当作固定扣款。
 
+当前解析器对 Exact-Out 返回 `minimumAmountOut = 0n`，该旧字段仅用于 Exact-In。Exact-Out 的展示与二次校验应读取 `route.exactOut.amountOut`（扣除分佣后的净目标）。API 类型中的 `amountOutMinimum` / `amountOutMinimumRaw` 为可选，读取方需处理 `undefined`。
+
 推荐保持原接口形状，通过运行时校验保证 EXACT_OUT 必须携带完整详情；不要为了类型重构破坏已有调用者的 interface 扩展或对象构造。
 
 ### 3.3 数值关系
@@ -151,6 +155,8 @@ V4 沿用 Exact-In 的固定 Manager 部署约定：SDK 不传入或独立校验
 本次暂不支持 V1 Exact-Out，API 报价与手动构造路径均在编码前拒绝；保留原有 V1 Exact-In。
 
 多跳金额由协议合约反算，不能把报价逐跳输入当成链上固定支付数额。V4 poolKey 的 parameters、hooks、fee 使用完整原始值，不用展示 poolFees 覆盖动态费配置。当前报价没有任意 hookData 时仅编码约定的空 bytes，不虚构 Hook 参数支持。
+
+Exact-Out 的 `hookData` 为 `0x`，Exact-In 沿用 `zeroAddress`（20 字节零）。Hook 可以区分这两种数据，不能据无 Hook 池的执行结果推断二者等价。
 
 池标识、地址比较须规范化大小写与 TRON 地址表示。拒绝重复池等服务端不支持的结构；不能仅因首尾同币就整体拒绝所有循环。
 
@@ -207,6 +213,24 @@ TAKE(outputCurrency, ADDRESS_THIS, OPEN_DELTA)
 提供 Exact-Out 示例：解析一条报价、指定 recipient、准备覆盖预算的 Permit2 授权、编码并把 callValue 传给交易调用。不把 bigint 无检查地转换成 JavaScript Number；按交易库实际可接受类型处理，必要时对安全整数范围显式校验。
 
 ### 5.5 纯 TRX/WTRX 包装
+
+#### 当前实现与共用能力（2026-09-10 复核）
+
+纯包装不是 Exact-Out 独有功能。现有 SDK 的 `addWTRX` 已共用 WRAP_ETH / UNWRAP_WETH 编码，Permit2 转入、分佣和 SWEEP 也已有工具；应复用这些能力，仅按交易类型区分金额、付款准备和退款参数，不建立第二套包装工具。
+
+| 环节 | Exact-In 当前行为 | Exact-Out 当前行为 |
+| --- | --- | --- |
+| QS 纯包装报价 | WrappedPool 可按 1:1 计算，但搜索要求 `hops > 0`，不会收录纯包装 | 搜索及准入要求真实交换，仍不会收录纯包装 |
+| SDK 准入 | 不要求至少一次真实交换 | 最新工作区已取消零真实交换拒绝，支持单跳纯包装 |
+| 默认纯解包付款 | 无输入分佣、非 oneShotTransfer 且未外部预付时，缺少用户 WTRX 转入 | 最新 `encodeExactOut` 已按预计总输入转入 WTRX，不拉取未使用的滑点预留 |
+
+Exact-In 的输入固定，按适用分佣计算可转换金额并检查最低输出；Exact-Out 的输出固定，按目标及分佣确定输入并遵守最大预算。下面的纯包装流程描述 Exact-Out 金额规则，并不意味着封包/解包命令需要独立实现。
+
+待完成：QS 两种模式的纯包装准入、报价与执行语义统一，以及 Exact-In 默认纯解包付款的单独修复。后者会增加转账命令，应补充用例并明确更新该场景的编码基线，不能一边修复一边要求该场景字节完全不变；其他 Exact-In 场景保持兼容。输入分佣、oneShotTransfer 或前段交换已提供 WTRX 时不得重复转入。
+
+禁用 V1 Exact-Out 不会自动补齐上述流程，纯包装本身不依赖 V1 池。此处已静态核对新增 SDK 分支，本轮未重新执行其测试或 QS 联调；此前 SDK 测试通过结果不能直接证明后续纯包装修改已验证。
+
+#### Exact-Out 目标流程
 
 允许单跳纯包装，不要求路径包含实际交换。逐跳输入与输出必须相等，仍校验预算、分佣和净输出目标。
 
@@ -316,6 +340,8 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 同币场景不得用单一钱包余额差当作输出：记录实际支付、PoolManager delta/池侧变化、代币转移与退款，建立资金账本；原生币还须剔除 gas。
 
 完成标准：构建及相关测试通过；每个声明支持的组合都有执行证据；尚未解决的组合明确报错并写入支持矩阵；实际 SDK 仓库应用最终实现后重新验证。只编译通过不算完成。
+
+当前证据范围：V2 已验证真实 Router 的命令执行、池子收款及扣款/退款/分佣资金守恒，但受控池未校验恒定乘积，也不更新储备，不能视为生产池内会计验证。V3 受控池校验 callback 付款；V4 使用真实 PoolManager，FFI 从 fixture 传入逐跳 fee。当前 V4 执行 fixture 使用静态费，动态费只覆盖 SDK 编码单测。上述限制应随支持矩阵一并披露。
 
 ## 10. 实施顺序与待解决项
 

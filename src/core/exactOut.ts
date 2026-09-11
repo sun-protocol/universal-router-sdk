@@ -80,16 +80,16 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
     inputReferralBips, outputReferralBips, stepAmountsIn, stepAmountsOut } = details
   bips(inputReferralBips)
   bips(outputReferralBips)
-  if (inputReferralBips && outputReferralBips) throw new Error('Exact-Out referrals are mutually exclusive')
+  if (inputReferralBips !== 0 || inputReferral !== 0n) {
+    throw new Error('Exact-Out input referral is not supported; use output referral')
+  }
   amount(route.amountIn, 'amountIn', UINT256_MAX, true)
   amount(maximumAmountIn, 'maximumAmountIn', route.input.isNative ? UINT256_MAX : UINT160_MAX, true)
   amount(amountOut, 'amountOut', UINT160_MAX, true)
   amount(grossAmountOut, 'grossAmountOut', UINT256_MAX, true)
   amount(inputReferral, 'inputReferral')
   amount(outputReferral, 'outputReferral')
-  const base = route.input.isNative ? maximumAmountIn : route.amountIn
-  if (inputReferral !== base * BigInt(inputReferralBips) / 10000n ||
-      outputReferral !== grossAmountOut * BigInt(outputReferralBips) / 10000n ||
+  if (outputReferral !== grossAmountOut * BigInt(outputReferralBips) / 10000n ||
       grossAmountOut - outputReferral < amountOut || maximumAmountIn < route.amountIn) {
     throw new Error('Inconsistent Exact-Out budget or referral amounts')
   }
@@ -97,7 +97,7 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
   if (!count || stepAmountsIn?.length !== count || stepAmountsOut?.length !== count) {
     throw new Error('Invalid Exact-Out step arrays')
   }
-  if (stepAmountsIn[0] + inputReferral !== route.amountIn || stepAmountsOut[count - 1] !== grossAmountOut) {
+  if (stepAmountsIn[0] !== route.amountIn || stepAmountsOut[count - 1] !== grossAmountOut) {
     throw new Error('Inconsistent Exact-Out endpoint amounts')
   }
   const seen = new Set<string>()
@@ -165,8 +165,8 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
   }
   if (!currency.Equal(route.output)) throw new Error('Invalid Exact-Out output currency')
   // Bounds on values actually encoded, including the headroom above the quoted input.
-  if (protocol === PoolType.V4) amount(maximumAmountIn - inputReferral, 'V4 maximum input', (1n << 128n) - 1n)
-  const prepaid = route.input.isNative || inputReferralBips > 0
+  if (protocol === PoolType.V4) amount(maximumAmountIn, 'V4 maximum input', (1n << 128n) - 1n)
+  const prepaid = route.input.isNative
   if (swaps && ((swapInput.Equal(swapOutput) && (prepaid || protocol === PoolType.V4)) ||
       (prepaid && (route.input.Equal(route.output) || swapInput.Equal(route.output))))) {
     throw new Error('Unsupported Exact-Out settlement combination: output and refund overlap')

@@ -54,6 +54,14 @@ function v4(tokens = [A, B]): RouteData {
 }
 
 describe('Exact-Out parsing and admission', () => {
+  it('exposes the Exact-Out net target separately from the legacy minimum', () => {
+    const route = parseRouteAPIResponse(quote({ amountOutRaw: '49', amountOutRawReferral: '1',
+      amountOutReferralBips: 200, amountOutMinimumRaw: '123' }), false)
+    expect(route.minimumAmountOut).toBe(0n)
+    expect(route.exactOut!.amountOut).toBe(49n)
+    expect(route.exactOut!.grossAmountOut).toBe(50n)
+  })
+
   it('ignores QS trailing poolFees without changing the encoded swap', () => {
     const expected = encode(quote({ poolVersions: ['v3'] }))
     const actual = encode(quote({ poolVersions: ['v3'], poolFees: ['3000', '0'] }))
@@ -83,12 +91,10 @@ describe('Exact-Out parsing and admission', () => {
     expect(() => parseRouteAPIResponse(data, true)).toThrow()
   })
 
-  it('accepts the QS native maximum-based referral response', () => {
-    const route = parseRouteAPIResponse({ ...v4([TRX, B]),
+  it('rejects the old QS native input referral response', () => {
+    expect(() => parseRouteAPIResponse({ ...v4([TRX, B]),
       amountInRaw: '100009999', amountInMaximumRaw: '100999999', amountInRawReferral: '1009999',
-      amountInReferralBips: 100, stepAmountsInRaw: ['99000000'] }, false)
-    expect(route.exactOut!.maximumAmountIn - route.exactOut!.inputReferral).toBe(99990000n)
-    expect(route.amountIn).toBe(100009999n)
+      amountInReferralBips: 100, stepAmountsInRaw: ['99000000'] }, false)).toThrow('input referral is not supported')
   })
 
   it.each([
@@ -158,13 +164,12 @@ describe('Exact-Out parsing and admission', () => {
 describe('Exact-Out commands and payments', () => {
   it.each(['wrap', 'unwrap'] as const)('encodes pure %s with only the required input', direction => {
     const wrap = direction === 'wrap'
-    for (const mode of ['none', 'input', 'output'] as const) {
-      const inputFee = mode === 'input'
+    for (const mode of ['none', 'output'] as const) {
       const outputFee = mode === 'output'
       const data = quote({ tokens: wrap ? [TRX, WTRX] : [WTRX, TRX],
-        amountInRaw: inputFee ? '101' : '100', amountOutRaw: outputFee ? '99' : '100',
-        amountInRawReferral: inputFee ? '1' : '0', amountOutRawReferral: outputFee ? '1' : '0',
-        amountInReferralBips: inputFee ? 100 : 0, amountOutReferralBips: outputFee ? 100 : 0,
+        amountInRaw: '100', amountOutRaw: outputFee ? '99' : '100',
+        amountInRawReferral: '0', amountOutRawReferral: outputFee ? '1' : '0',
+        amountInReferralBips: 0, amountOutReferralBips: outputFee ? 100 : 0,
         stepAmountsInRaw: ['100'], stepAmountsOutRaw: ['100'],
       })
       const outer = commands(encode(data, mode === 'none' ? undefined : {
@@ -176,8 +181,10 @@ describe('Exact-Out commands and payments', () => {
         expect(outer[outer.length - 1]).toEqual({ type: CommandType.SWEEP, args: [TRX, recipient.hex, 0n] })
       } else {
         expect(outer.filter(command => command.type === CommandType.PERMIT2_TRANSFER_FROM))
-          .toEqual([{ type: CommandType.PERMIT2_TRANSFER_FROM, args: [getAddress(WTRX), ADDRESS_THIS.hex, inputFee ? 101n : 100n] }])
+          .toEqual([{ type: CommandType.PERMIT2_TRANSFER_FROM, args: [getAddress(WTRX), ADDRESS_THIS.hex, 100n] }])
         expect(outer.filter(command => command.type === CommandType.UNWRAP_WETH)).toHaveLength(1)
+        expect(outer.filter(command => command.type === CommandType.SWEEP))
+          .toEqual([{ type: CommandType.SWEEP, args: [TRX, recipient.hex, BigInt(data.amountOutRaw)] }])
       }
     }
   })
@@ -199,9 +206,13 @@ describe('Exact-Out commands and payments', () => {
     expect(planner.callValue).toBe(0n)
   })
 
-  it('a zero-bps input referral option does not turn off user payment', () => {
-    const planner = encode(quote(), { referralOptions: { mode: 'input', bps: 0, projectAddress: C } })
-    expect(commands(planner)[0].args[4]).toBe(true)
+  it.each([0, 100])('rejects input referral options at %i bps before appending commands', bps => {
+    const planner = new TradePlanner([parseRouteAPIResponse(quote(), false)], false, {
+      referralOptions: { mode: 'input', bps, projectAddress: C },
+    })
+    expect(() => planner.encode()).toThrow('input referral is not supported')
+    expect(planner.commands).toBe('0x')
+    expect(planner.inputs).toEqual([])
   })
 
   it('V3 reverses tokens and fees together', () => {
@@ -268,16 +279,31 @@ describe('Exact-Out commands and payments', () => {
     expect(outer[1].args[4]).toBe(false)
   })
 
-  it('ERC20 input referral excludes the slippage reserve', () => {
-    const outer = commands(encode(quote({ amountInRaw: '101', amountInMaximumRaw: '111',
-      amountInRawReferral: '1', amountInReferralBips: 100 }),
-    { referralOptions: { mode: 'input', bps: 100, projectAddress: C } }))
-    expect(outer.map(c => c.type)).toEqual([CommandType.PERMIT2_TRANSFER_FROM, CommandType.PAY_REFERRAL,
-      CommandType.PERMIT2_TRANSFER_FROM, CommandType.V2_SWAP_EXACT_OUT, CommandType.SWEEP, CommandType.SWEEP])
-    expect(outer[0].args[2]).toBe(101n)
-    expect(outer[2].args[2]).toBe(10n)
-    expect(outer[3].args[2]).toBe(110n)
-    expect(outer[3].args[4]).toBe(false)
+  it.each([
+    { amountInRawReferral: '1', amountInReferralBips: 0 },
+    { amountInRawReferral: '0', amountInReferralBips: 1 },
+    { amountInRawReferral: '1', amountInReferralBips: 100 },
+  ])('rejects input referral amounts or rates in API and manual routes: %j', override => {
+    expect(() => parseRouteAPIResponse(quote(override), false)).toThrow('input referral is not supported')
+    const route = parseRouteAPIResponse(quote(), false)
+    route.exactOut!.inputReferral = BigInt(override.amountInRawReferral)
+    route.exactOut!.inputReferralBips = override.amountInReferralBips
+    expect(() => new TradePlanner([route])).toThrow('input referral is not supported')
+  })
+
+  it.each(['v2', 'v3', 'v4', 'usdt20psm'])('charges output only after the %s swap and checks the net target', version => {
+    const psm = version === 'usdt20psm'
+    const data = quote({ ...(version === 'v4' ? v4() : {}), poolVersions: [version],
+      ...(psm ? { tokens: ['0xe91a7411e56ce79e83570570f49b9fc35b7727c5',
+        '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'], amountInRaw: '50000000000000',
+        amountInMaximumRaw: '55000000000000', stepAmountsInRaw: ['50000000000000'] } : {}),
+      amountOutRaw: '49', amountOutRawReferral: '1', amountOutReferralBips: 200 })
+    const outer = commands(encode(data, { referralOptions: { mode: 'output', bps: 200, projectAddress: C } }))
+    expect(outer).toHaveLength(3)
+    expect(outer[1].type).toBe(CommandType.PAY_REFERRAL)
+    expect(outer[1].args[2]).toBe(200n)
+    expect(outer[2].type).toBe(CommandType.SWEEP)
+    expect(outer[2].args[2]).toBe(49n)
   })
 
   it('rejects missing referral options and rolls back failed encoding', () => {
@@ -287,8 +313,9 @@ describe('Exact-Out commands and payments', () => {
     const before = [planner.commands, [...planner.inputs]]
     expect(() => planner.encode()).toThrow()
     expect([planner.commands, planner.inputs]).toEqual(before)
-    expect(() => encode(quote({ amountInRaw: '101', amountInMaximumRaw: '111',
-      amountInRawReferral: '1', amountInReferralBips: 100 }))).toThrow('match')
+    const withFee = quote({ amountOutRaw: '49', amountOutRawReferral: '1', amountOutReferralBips: 200 })
+    expect(() => encode(withFee)).toThrow('match')
+    expect(() => encode(withFee, { referralOptions: { mode: 'output', bps: 100, projectAddress: C } })).toThrow('match')
   })
 
   it('keeps default and explicit Exact-In encoding identical', () => {
