@@ -80,7 +80,7 @@ For TRX input, `callValue` is the maximum total input, all available for the swa
 | V2 | Single protocol, single or multiple distinct pools; validated through actual Router commands and payments with controlled pool accounting |
 | V3 | Single protocol, single or multiple distinct pools; controlled pools validate callback payment |
 | V4 | Single or multiple pools through the Router's fixed Manager; actual-debt settlement, empty hookData |
-| PSM | One production USDT/USDD pool (`usdt20psm`), both directions, with output granularity checks |
+| PSM | Registered `usdt20psm` pool selected by Router flag, both directions, with `10^12` granularity checks |
 | Wrap / unwrap | Pure TRX ↔ WTRX, or entry/exit wrapping around a supported swap |
 | Same-currency routes | User-paid V2/V3 routes through distinct pools; V4 net-delta loops and prepaid output/refund collisions are rejected |
 | Mixed protocols, splits, Stable, HTX Sun | Rejected for Exact-Out |

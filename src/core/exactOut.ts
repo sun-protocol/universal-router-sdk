@@ -5,8 +5,7 @@ import { toBase58 } from '../utils/addressConvert'
 
 const UINT160_MAX = (1n << 160n) - 1n
 const UINT256_MAX = (1n << 256n) - 1n
-const PSM_USDT = '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'
-const PSM_USDD = '0xe91a7411e56ce79e83570570f49b9fc35b7727c5'
+const PSM_RELATIVE_DECIMALS = 10n ** 12n
 
 export function validateTradeType(type: unknown): void {
   if (type !== undefined && type !== 'EXACT_IN' && type !== 'EXACT_OUT') {
@@ -152,13 +151,13 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
         amount(stepAmountsOut[i], 'V4 output', (1n << 127n) - 1n)
       }
       if (pool.type === PoolType.PSM) {
-        if (swaps !== 1 || pool.flag !== PoolFlag.PSM || a !== PSM_USDT || b !== PSM_USDD) {
+        if (swaps !== 1 || pool.flag !== PoolFlag.PSM) {
           throw new Error('Unsupported Exact-Out PSM pool')
         }
-        const expected = currency.hex.toLowerCase() === PSM_USDT
-          ? stepAmountsIn[i] * 10n ** 12n : stepAmountsIn[i] / 10n ** 12n
-        if (expected !== stepAmountsOut[i] ||
-            (currency.hex.toLowerCase() === PSM_USDD && stepAmountsIn[i] % 10n ** 12n !== 0n)) {
+        const gemToUsdd = stepAmountsOut[i] === stepAmountsIn[i] * PSM_RELATIVE_DECIMALS
+        const usddToGem = stepAmountsIn[i] % PSM_RELATIVE_DECIMALS === 0n &&
+          stepAmountsOut[i] === stepAmountsIn[i] / PSM_RELATIVE_DECIMALS
+        if (!gemToUsdd && !usddToGem) {
           throw new Error('Invalid PSM Exact-Out granularity')
         }
       }
