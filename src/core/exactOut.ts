@@ -125,12 +125,16 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
           !(i === 0 && currency.isNative || i === count - 1 && next.isNative) ||
           stepAmountsIn[i] !== stepAmountsOut[i]) throw new Error('Unsupported Exact-Out wrap boundary')
     } else {
-      if (![PoolType.V2, PoolType.V3, PoolType.V4, PoolType.PSM].includes(pool.type) ||
+      if (![PoolType.V1, PoolType.V2, PoolType.V3, PoolType.V4, PoolType.PSM].includes(pool.type) ||
           (protocol !== undefined && protocol !== pool.type)) throw new Error('Unsupported Exact-Out protocol mix')
       if (!swaps) swapInput = currency
       swapOutput = next
       swaps++
       protocol = pool.type
+      // V1 encodes endpoints only; its sole supported intermediate currency is TRX.
+      if (pool.type === PoolType.V1 && (swaps > 2 ||
+          (swaps === 2 && (!currency.isNative || swapInput.isNative || next.isNative)) ||
+          swapInput.Equal(next))) throw new Error('Unsupported V1 Exact-Out path')
       if ((pool.type === PoolType.V2 || pool.type === PoolType.V3 || pool.type === PoolType.PSM) &&
           (currency.isNative || next.isNative)) throw new Error('Protocol requires wrapped native currency')
       if (pool.type === PoolType.V3 || pool.type === PoolType.V4) {
@@ -166,7 +170,7 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
   if (!currency.Equal(route.output)) throw new Error('Invalid Exact-Out output currency')
   // Bounds on values actually encoded, including the headroom above the quoted input.
   if (protocol === PoolType.V4) amount(maximumAmountIn, 'V4 maximum input', (1n << 128n) - 1n)
-  const prepaid = route.input.isNative
+  const prepaid = route.input.isNative || protocol === PoolType.V1
   if (swaps && ((swapInput.Equal(swapOutput) && (prepaid || protocol === PoolType.V4)) ||
       (prepaid && (route.input.Equal(route.output) || swapInput.Equal(route.output))))) {
     throw new Error('Unsupported Exact-Out settlement combination: output and refund overlap')

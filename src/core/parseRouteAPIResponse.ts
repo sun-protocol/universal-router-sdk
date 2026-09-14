@@ -47,7 +47,7 @@ export function parseRouteAPIResponse(
   for (let i = 0; i < routeData.poolVersions.length; i++) {
     const poolVersion = routeData.poolVersions[i]
     if (exactOut) {
-      if (!['v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(poolVersion)) {
+      if (!['v1', 'v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(poolVersion)) {
         throw new Error('Unsupported Exact-Out pool version')
       }
       const wrapped = (isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS).hex.toLowerCase()

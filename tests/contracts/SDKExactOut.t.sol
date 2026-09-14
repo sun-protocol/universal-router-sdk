@@ -101,7 +101,8 @@ contract SDKExactOutV4Test is CLSunSwapV4Test {
         args[10] = args[7];
         (bytes memory commands, bytes[] memory inputs,) = abi.decode(vm.ffi(args), (bytes, bytes[], uint256));
         token0.mint(alice, 2_000_000 ether);
-        vm.expectRevert(abi.encodeWithSignature("InsufficientToken()"));
+        vm.expectRevert(abi.encodeWithSignature("ExactOutputUnfilled(uint256,uint256)",
+            uint256(1_000_000 ether), uint256(10 ether - 1)));
         vm.prank(alice); router.execute(commands, inputs, block.timestamp);
         assertEq(token0.balanceOf(alice), 2_000_000 ether);
         assertEq(token1.balanceOf(alice), 0);
