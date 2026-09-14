@@ -151,13 +151,20 @@ describe('Exact-Out parsing and admission', () => {
       }))).toThrow()
   })
 
-  it('enforces PSM output granularity and the production pair', () => {
+  it('enforces PSM output granularity without binding validation to deployment addresses', () => {
     const data = quote({ tokens: ['0xa614f803b6fd780986a42c78ec9c7f77e6ded13c', '0xe91a7411e56ce79e83570570f49b9fc35b7727c5'],
       poolVersions: ['usdt20psm'], amountInRaw: '1', amountInMaximumRaw: '2', amountOutRaw: '1000000000000',
       stepAmountsInRaw: ['1'], stepAmountsOutRaw: ['1000000000000'] })
     expect(commands(encode(data))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
     expect(() => encode({ ...data, stepAmountsOutRaw: ['999999999999'], amountOutRaw: '999999999999' })).toThrow('granularity')
-    expect(() => encode({ ...data, tokens: [A, B] })).toThrow('PSM')
+    expect(commands(encode({ ...data, tokens: [A, B] }))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
+
+    const reverse = quote({ tokens: [B, A], poolVersions: ['usdt20psm'], amountInRaw: '1000000000000',
+      amountInMaximumRaw: '1000000000001', amountOutRaw: '1', stepAmountsInRaw: ['1000000000000'],
+      stepAmountsOutRaw: ['1'] })
+    expect(commands(encode(reverse))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
+    expect(() => encode({ ...reverse, amountInRaw: '1000000000001', stepAmountsInRaw: ['1000000000001'] }))
+      .toThrow('granularity')
   })
 })
 
