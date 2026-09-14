@@ -226,7 +226,7 @@ export class TradePlanner extends RoutePlanner {
     if (amounts.outputReferralBips) this.addPayReferral(plan.output, referral!.projectAddress, referral!.bps)
     this.addSweep(plan)
 
-    if (plan.input.isNative) {
+    if (plan.input.isNative || plan.sections.some(section => section.type === RouteType.V1)) {
       const recipient = plan.recipient ?? MSG_SENDER
       if (!pureWrap && plan.sections[0].type === RouteType.WTRX) {
         this.addCommand(CommandType.UNWRAP_WETH, [ADDRESS_THIS.hex, 0n])
@@ -317,7 +317,6 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private addV1Swap(plan: SwapExecutionPlan, section: SwapSection) {
-    if (plan.exactOut) throw new Error('V1 Exact-Out is not supported')
     if (section.pools.length === 0) {
       throw new Error('V1 pool must have exactly one pool')
     }
@@ -327,6 +326,14 @@ export class TradePlanner extends RoutePlanner {
     const amountOutMinimum = this.getMinimumAmountOut(plan, section)
     const path = encodeV1RouteToPath(section)
     const payerIsUser = this.getPayerIsUser(section)
+
+    if (plan.exactOut) {
+      this.debugLog('V1_SWAP_EXACT_OUT', { recipient, amountOut: plan.exactOut.grossAmountOut,
+        amountInMaximum: plan.exactOut.maximumAmountIn, path, payerIsUser })
+      this.addCommand(CommandType.V1_SWAP_EXACT_OUT, [recipient, plan.exactOut.grossAmountOut,
+        plan.exactOut.maximumAmountIn, path, payerIsUser])
+      return
+    }
 
     this.debugLog('V1_SWAP_EXACT_IN', { recipient, amountIn, amountOutMinimum, path, payerIsUser })
 

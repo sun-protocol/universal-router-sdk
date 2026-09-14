@@ -12,6 +12,7 @@ for (const entry of ['contracts', 'lib', 'test', 'foundry.toml']) {
 }
 fs.copyFileSync(path.join(__dirname, 'SDKExactOut.t.sol'), path.join(root, 'test', 'SDKExactOut.t.sol'))
 fs.copyFileSync(path.join(__dirname, 'SDKProtocols.t.sol'), path.join(root, 'test', 'SDKProtocols.t.sol'))
+fs.copyFileSync(path.join(__dirname, 'SDKV1.t.sol'), path.join(root, 'test', 'SDKV1.t.sol'))
 console.log(`Contract execution workspace: ${root}`)
 const result = spawnSync('forge', ['test', '--root', root, '--match-path', 'test/SDK*.t.sol',
   '--match-test', 'test_sdk_', '--code-size-limit', '100000', '--offline', '-vv'], {

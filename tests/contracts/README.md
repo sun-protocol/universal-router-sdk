@@ -5,7 +5,7 @@ is covered by SDK unit tests; contract tests exercise output fees after swaps,
 net output checks, actual input payments, native refunds and pure wrapping.
 
 Requires Node.js, Foundry, Solc 0.8.26 installed locally, and a checkout of
-`sunswap-universal-router` at `fbd1a93964d159b8c39450652c2285b4dbffc1c1` with its dependencies.
+`sunswap-universal-router` at `4fbc87557dcddbe3031409ab65561035eb292ac6` with its dependencies.
 
 ```sh
 ROUTER_SOURCE=/path/to/sunswap-universal-router npm run test:contracts
@@ -34,3 +34,9 @@ dynamic-fee coverage in the TypeScript tests checks encoding only.
 
 Exact-In encoding baselines in `src/core/fixtures/exactIn.json` were captured from
 the SDK's pre-change git HEAD, covering protocols, wrapping, referrals and splits.
+
+V1 uses the checkout's `V1OutputExchange` fixtures with actual Router and Permit2.
+Coverage includes native input/output, Token→Token (including explicit TRX bridge),
+output referral, native budget refund, input allowance reset, budget failure and
+short-output rollback. These exchanges consume inputs and price against balances;
+they are still controlled mocks, not production exchange deployments.

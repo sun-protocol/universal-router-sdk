@@ -223,18 +223,55 @@ describe('Exact-Out commands and payments', () => {
       [C, 3000, B, 500, A]))
   })
 
-  it.each([[TRX, B], [A, TRX], [A, TRX, B]])('rejects V1 Exact-Out paths %j', (...tokens) => {
-    expect(() => encode(quote({ tokens, poolVersions: tokens.slice(1).map(() => 'v1'),
+  it.each([[TRX, B], [A, TRX], [A, B], [A, TRX, B]])('encodes V1 Exact-Out endpoints %j', (...tokens) => {
+    const planner = encode(quote({ tokens, poolVersions: tokens.slice(1).map(() => 'v1'),
       poolFees: tokens.slice(1).map(() => '0'), poolKeys: tokens.slice(1).map(() => null),
       stepAmountsInRaw: tokens.length === 2 ? ['100'] : ['100', '70'],
       stepAmountsOutRaw: tokens.length === 2 ? ['50'] : ['70', '50'],
-    }))).toThrow('Unsupported Exact-Out pool version')
+    }))
+    const outer = commands(planner)
+    expect(outer.map(command => command.type)).toEqual([CommandType.V1_SWAP_EXACT_OUT, CommandType.SWEEP, CommandType.SWEEP])
+    expect(outer[0].args).toEqual([ADDRESS_THIS.hex, 50n, 110n, [tokens[0], tokens[tokens.length - 1]], tokens[0] !== TRX])
+    expect(outer[1].args).toEqual([tokens[tokens.length - 1], recipient.hex, 50n])
+    expect(outer[2].args).toEqual([tokens[0], recipient.hex, 0n])
+    expect(planner.callValue).toBe(tokens[0] === TRX ? 110n : 0n)
   })
 
-  it('rejects manually constructed V1 Exact-Out routes', () => {
-    const route = parseRouteAPIResponse(v4([TRX, B]), false)
-    route.pools = parseRouteAPIResponse(quote({ tradeType: 'EXACT_IN', tokens: [TRX, B], poolVersions: ['v1'] }), false).pools
-    expect(() => new TradePlanner([route])).toThrow('Unsupported Exact-Out protocol')
+  it.each([[A, B, C], [TRX, A, B], [A, TRX, B, C], [A, TRX, A]])('rejects unsupported V1 paths %j', (...tokens) => {
+    const n = tokens.length - 1
+    const data = quote({ tokens, poolVersions: Array(n).fill('v1'), poolFees: Array(n).fill('0'),
+      poolKeys: Array(n).fill(null), stepAmountsInRaw: ['100', ...Array(n - 1).fill('50')],
+      stepAmountsOutRaw: Array(n).fill('50') })
+    expect(() => encode(data)).toThrow()
+    const route = parseRouteAPIResponse({ ...data, tradeType: 'EXACT_IN' }, false)
+    route.tradeType = 'EXACT_OUT'
+    route.exactOut = { ...parseRouteAPIResponse(quote(), false).exactOut!,
+      stepAmountsIn: data.stepAmountsInRaw!.map(BigInt), stepAmountsOut: data.stepAmountsOutRaw!.map(BigInt) }
+    expect(() => new TradePlanner([route])).toThrow()
+  })
+
+  it.each([true, false])('preserves V1 wrap boundaries (entry=%s)', entry => {
+    const planner = encode(quote({ tokens: entry ? [TRX, WTRX, B] : [A, WTRX, TRX],
+      poolVersions: entry ? ['v2', 'v1'] : ['v1', 'v2'], poolFees: ['0', '0'], poolKeys: [null, null],
+      stepAmountsInRaw: entry ? ['100', '100'] : ['100', '50'],
+      stepAmountsOutRaw: entry ? ['100', '50'] : ['50', '50'],
+    }))
+    const outer = commands(planner)
+    expect(outer.map(command => command.type)).toEqual(entry
+      ? [CommandType.WRAP_ETH, CommandType.V1_SWAP_EXACT_OUT, CommandType.SWEEP, CommandType.UNWRAP_WETH, CommandType.SWEEP]
+      : [CommandType.V1_SWAP_EXACT_OUT, CommandType.UNWRAP_WETH, CommandType.SWEEP, CommandType.SWEEP])
+    const swap = outer.find(command => command.type === CommandType.V1_SWAP_EXACT_OUT)!
+    expect(swap.args[4]).toBe(!entry)
+    expect(outer[outer.length - 1].args).toEqual([entry ? TRX : A, recipient.hex, 0n])
+  })
+
+  it('charges V1 output referral before net output and input refund', () => {
+    const outer = commands(encode(quote({ poolVersions: ['v1'], amountOutRaw: '49',
+      amountOutRawReferral: '1', amountOutReferralBips: 200 }),
+    { referralOptions: { mode: 'output', bps: 200, projectAddress: C } }))
+    expect(outer.map(command => command.type)).toEqual([CommandType.V1_SWAP_EXACT_OUT,
+      CommandType.PAY_REFERRAL, CommandType.SWEEP, CommandType.SWEEP])
+    expect(outer[2].args).toEqual([B, recipient.hex, 49n])
   })
 
   it('V4 user payment settles only debt after swapping', () => {

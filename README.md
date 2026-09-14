@@ -76,7 +76,7 @@ For TRX input, `callValue` is the maximum total input, all available for the swa
 
 | Exact-Out route | Encoding support |
 | --- | --- |
-| V1 | Not supported for Exact-Out |
+| V1 | TRX→Token, Token→TRX, Token→Token (internal TRX bridge); controlled exchange execution tests |
 | V2 | Single protocol, single or multiple distinct pools; validated through actual Router commands and payments with controlled pool accounting |
 | V3 | Single protocol, single or multiple distinct pools; controlled pools validate callback payment |
 | V4 | Single or multiple pools through the Router's fixed Manager; actual-debt settlement, empty hookData |
@@ -210,3 +210,22 @@ npm run test         # Run tests
 ## License
 
 MIT
+
+### V1 Exact-Out contract compatibility
+
+V1 Exact-Out requires the Router implementation at `4fbc87557dcddbe3031409ab65561035eb292ac6`
+(or a compatible deployment). SDK support alone does not establish deployment support.
+The local QS currently disables V1 Exact-Out; it must separately enable compatible quotes.
+
+The SDK accepts two endpoints or an explicit Token→TRX→Token route and encodes
+`V1_SWAP_EXACT_OUT(recipient=Router, grossAmountOut, maximumAmountIn, [input, output], payerIsUser)`.
+Other intermediates, longer paths, repeated pools and output/refund currency collisions
+are rejected. The contract performs the Token→Token TRX bridge internally.
+TRX/WTRX pairs retain wrapping semantics.
+
+Native input sends the maximum budget as callValue. ERC20 input is pulled into the
+Router using Permit2 for the on-chain computed requirement; any unconsumed input is
+swept to recipient after output distribution. Output referral is charged before the
+net-target SWEEP, followed by an input refund SWEEP with minimum zero. Input referral
+remains unsupported. V1 evidence uses actual Router/Permit2 with controlled exchanges
+that transfer actual input and output, not deployed production pools.

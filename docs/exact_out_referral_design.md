@@ -437,3 +437,22 @@ planner.encode()
 - Router 源码基线：`fbd1a93964d159b8c39450652c2285b4dbffc1c1`；主要实现为 `UniversalRouter.sol`、`Dispatcher.sol`、`Payments.sol`、`Permit2Payments.sol`、V2/V3 swap 模块、V4Router/CLRouterBase、`ReferralVault.sol`。
 
 本文围绕 Exact-Out。Exact-In 输入通常固定，不能把 Exact-Out 的最大预算、实际债务结算和退款步骤直接套用到所有 Exact-In 拆单场景。
+
+## V1 Exact-Out 补充
+
+适用 Router 版本：`4fbc87557dcddbe3031409ab65561035eb292ac6` 或兼容实现。
+支持 TRX→Token、Token→TRX、Token→Token（合约内经 TRX）。SDK 也接受显式 Token→TRX→Token，
+编码时只传两个端点；其他中间币和更长路径拒绝。本地 QS 当前还未开放 V1 Exact-Out。
+
+仅支持输出端返佣或不返佣。这里 N 是用户净目标，G 是交给 Router 的毛输出，b 是返佣基点数，
+D=10000：费用为 floor(G×b/D)，要求 G−floor(G×b/D)≥N。
+执行顺序为 V1_SWAP_EXACT_OUT → PAY_REFERRAL（如有）→ SWEEP(输出,recipient,N) → SWEEP(输入,recipient,0)。
+若有 TRX/WTRX 边界，还会包含相应包装或解包命令。
+
+TRX 输入：callValue 为最大输入预算，V1 直接消耗原生 TRX；剩余 TRX 退给 recipient，
+不需要为直接 TRX→Token 路径包装 WTRX。ERC20 输入：Router 用 Permit2 拉取链上计算所需输入，
+授权交易所并交换，随后清零授权；若实际消耗少于拉取量，输入 SWEEP 将差额退给 recipient。
+这和 V2/V3 直接向池付款不同。输出是 ERC20 或 TRX 时，均先汇入 Router 再收输出费。
+禁止退款与输出使用同一币种，以免把退款算入返佣基数。不考虑外部多余资金。
+
+验证使用真实 Router/Permit2 与实际转移输入、输出的受控 V1 交易所；不代表已部署池验证。

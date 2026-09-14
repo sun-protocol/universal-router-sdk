@@ -43,7 +43,7 @@
 
 Pancake 的 `TradePlanner.addSwapCommand` 在同一流程中按 tradeType 选择 V2、V3、StableSwap 命令；Infinity 单跳、多跳同样在共用方法中选择 Exact-In 或 Exact-Out action。V3 的路径编码携带 exactOutput 标记。其 `parseSwapTradeContext` 负责路径分段和付款来源，`returnChanges` 负责剩余包装币转换。[Router SDK 1.5.3 官方发布包](https://www.npmjs.com/package/@pancakeswap/universal-router-sdk/v/1.5.3)
 
-本地沿用相同职责划分，在现有协议编码方法内增加分支；不导入整套 SmartRouterTrade，不新增另一套完整 TradePlanner。Pancake 支持的 StableSwap、Infinity Bin 不自动成为本地支持范围；本地 PSM 仍以实际合约为准，V1 Exact-Out 暂不支持。
+本地沿用相同职责划分，在现有协议编码方法内增加分支；不导入整套 SmartRouterTrade，不新增另一套完整 TradePlanner。Pancake 支持的 StableSwap、Infinity Bin 不自动成为本地支持范围；本地 PSM 仍以实际合约为准，V1 Exact-Out 支持范围见下文新增的 V1 合约适配。
 
 ### 2.3 Infinity 的付款与退款
 
@@ -142,7 +142,7 @@ SDK 直接使用 QS 返回的 Tmax、F、T 和 G，仅做字段与预算一致�
 
 | 路径 | 编码方案 |
 | --- | --- |
-| V1 | 暂不支持 Exact-Out，编码前拒绝 |
+| V1 | TRX→Token、Token→TRX、Token→Token（合约内部经 TRX）；不支持任意多跳 |
 | V2 多跳 | 一个 V2_SWAP_EXACT_OUT，完整正向地址数组 |
 | V3 多跳 | 一个 V3_SWAP_EXACT_OUT，代币和费率整体反向编码 |
 | V4 单跳/多跳 | 一个 V4_SWAP，内部选择原生 Exact-Out action，按本地合约定义编码路径 |
@@ -152,7 +152,7 @@ SDK 直接使用 QS 返回的 Tmax、F、T 和 G，仅做字段与预算一致�
 
 V4 沿用 Exact-In 的固定 Manager 部署约定：SDK 不传入或独立校验 Manager，所有 V4 跳由目标 Router 部署时设置的 clPoolManager 执行。调用方使用与报价服务匹配的 Router 部署，不新增 Manager 字段或校验流程。
 
-本次暂不支持 V1 Exact-Out，API 报价与手动构造路径均在编码前拒绝；保留原有 V1 Exact-In。
+V1 接受两个端点或显式 Token→TRX→Token；编码为两个端点。其他中间币与更长路径拒绝，保留原有 Exact-In。
 
 多跳金额由协议合约反算，不能把报价逐跳输入当成链上固定支付数额。V4 poolKey 的 parameters、hooks、fee 使用完整原始值，不用展示 poolFees 覆盖动态费配置。当前报价没有任意 hookData 时仅编码约定的空 bytes，不虚构 Hook 参数支持。
 
@@ -248,7 +248,7 @@ Exact-In 的输入固定，按适用分佣计算可转换金额并检查最低�
 
 处理顺序：
 
-1. 用户实际扣款、没有 Router 输入预付款的 V2/V3 路径，支持通过不同池返回输入币种，Router 收尾仅分发兑换输出。V1 Exact-Out 和 PSM 多池不在支持范围。
+1. 用户实际扣款、没有 Router 输入预付款的 V2/V3 路径，支持通过不同池返回输入币种，Router 收尾仅分发兑换输出。V1 同币回环和 PSM 多池不在支持范围。
 2. 有预付款但协议支持直接交付输出的路径，评估仅对 Exact-Out 将交换 recipient 设为最终收款人，再独立退回输入余额；必须同时证明协议自身足额输出约束，不靠包含退款的 SWEEP 检查。
 3. V4 同币循环只有一个币种的净 delta，不能直接套用第 5.3 节：净 delta 可能是 credit，SETTLE_ALL / SETTLE(OPEN_DELTA) 读取 debt 会回滚；即使是 debt，也只代表输入与输出抵消后的净额。须单独证明输入、兑换输出及退款的语义，不能把净额结算当作已支持完整 Exact-Out，也不能靠指定 TAKE 金额证明输出足额。未验证的组合明确拒绝。
 4. TRX/WTRX 边界转换产生的余额碰撞按同样规则处理，不能只比较用户首尾地址。
@@ -313,7 +313,7 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 
 - 缺省类型及显式 EXACT_IN 的既有命令字节保持一致，覆盖各协议、包装、分佣和原有拆单。
 - Exact-Out 响应字段使用真实服务返回样本，测试缺失/错误 raw 字段、数组错位、金额溢出、未知协议、重复池、非法分佣和滑点覆盖。
-- 解码实际 commands/inputs 检查 amountOut、amountInMaximum、V1 Exact-Out 拒绝、V2 完整路径、V3 反向路径、V4 action 顺序和本地 ABI。
+- 解码实际 commands/inputs 检查 amountOut、amountInMaximum、V1 Exact-Out 端点与路径准入、V2 完整路径、V3 反向路径、V4 action 顺序和本地 ABI。
 - 普通 V4 路径验证交换后结算：用户付款用 SETTLE_ALL(input, Rmax)，Router 付款用 SETTLE(input, OPEN_DELTA, false)，然后 TAKE 输出；不预结算预算或添加常规输入退款 TAKE。V4 命令 input 验证为直接编码的 (bytes actions, bytes[] params)，不得多包一层 bytes；地址、动作及池参数按本地部署校验，记录与 Pancake 预算结算的差异。
 - Exact-Out 编码失败不留下可误用的半成品；示例按每笔交易新建实例、只调用一次 encode() 编写，不要求修改现有追加行为。
 
@@ -323,7 +323,7 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 
 | 维度 | 必测场景 |
 | --- | --- |
-| 协议 | V1 Exact-Out 准入拒绝；V2/V3/V4 单跳、多跳；PSM 双向与粒度 |
+| 协议 | V1 原生币双向及 Token→Token；V2/V3/V4 单跳、多跳；PSM 双向与粒度 |
 | 预算 | 实际输入低于、等于、超过最大值；超过时整体回滚 |
 | 输出 | 恰好满足、整数余量、不足额、耗尽流动性、Hook 部分成交 |
 | 纯包装 | TRX ↔ WTRX 双向；无分佣、输入分佣、输出分佣；仅转换所需数量、TRX 余款退款；WTRX 余额与授权仅够 T、低于 Tmax 时仍成功 |
@@ -353,7 +353,7 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 
 当前必须解决的开发问题：V4 同币 delta 的正确结算顺序；含包装的输出/退款隔离；ERC20 输入分佣与本次滑点预留的隔离；TRX 最大预算分佣与 QS 报价的执行一致性；同币输出分佣；无历史余额基线下的 Hook 不足额输出验证。历史余额隔离不在本次范围内。以上是实现阶段的具体任务，不需要新增任意 payer 或必填 safeVault 接口来替代验证。
 
-当前执行证据：`tests/contracts` 通过 FFI 调用编译后的 SDK 生成 calldata，再由实际 Router 执行。V4 使用实际 PoolManager 与流动性；V2/V3/PSM 使用可控池测试实际 Router 的交换与付款模块。覆盖实际欠款、预算回滚、收款与退款、分佣及 PSM 双向兑换；V1 Exact-Out 不在支持范围。Exact-In 命令哈希基线从改动前 git HEAD 生成，包含各协议、包装、分佣及拆单。线上固定区块样本与任意 Hook 池执行尚未验证，不能把可控池证据等同于部署验证。
+当前执行证据：`tests/contracts` 通过 FFI 调用编译后的 SDK 生成 calldata，再由实际 Router 执行。V4 使用实际 PoolManager 与流动性；V2/V3/PSM 使用可控池测试实际 Router 的交换与付款模块。覆盖实际欠款、预算回滚、收款与退款、分佣及 PSM 双向兑换；V1 使用新版合约与实际收付输入的受控交易所测试。Exact-In 命令哈希基线从改动前 git HEAD 生成，包含各协议、包装、分佣及拆单。线上固定区块样本与任意 Hook 池执行尚未验证，不能把可控池证据等同于部署验证。
 
 ## 11. 本地参考文件
 
@@ -370,3 +370,12 @@ PAY_REFERRAL 使用整个 Router 余额，历史输入余额也会影响分佣�
 - 报价服务：`quote_service/graph/quote.go`、`quote_service/graph/exact_out_quote.go`、`quote_service/graph/exact_out_route.go`。
 - 背景设计：报价服务仓库 `docs/exact_to_support_design.md`。其中涉及历史顺序执行方案的内容不能覆盖当前代码的原生执行约束。
 - 合约：见第 2 节基线与文件；上线前需要确认部署合约与测试使用的源码/ABI 一致。
+
+## V1 合约适配（更新）
+
+本次 V1 以 Router `4fbc87557dcddbe3031409ab65561035eb292ac6` 为基线，替代上文旧版基线中 V1 禁用结论。
+SDK 不修改合约；部署是否包含该实现需单独确认。当前本地 QS 仍禁用 V1 Exact-Out。
+V1 命令只接受两个端点；SDK 可把显式 Token→TRX→Token 合并成端点，不能省略其他中间币。
+输入 ERC20 经 Permit2 按链上计算需求拉入 Router，TRX 则随 callValue 预存最大预算。
+末尾先输出端分佣、再净输出 SWEEP、最后输入币 SWEEP 退还未用输入；禁止输出与退款混币。
+输出分佣仍是唯一支持的 Exact-Out 收费方式。Exact-In 路径编码不变。
