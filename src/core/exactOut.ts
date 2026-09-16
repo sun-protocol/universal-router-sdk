@@ -1,7 +1,8 @@
 import { Hex } from 'viem'
-import { Address, PoolType, PoolFlag, ExactOutRouteData, ExactOutSwapTradeRoute } from '../types'
+import { Address, PoolType, PoolFlag, ExactOutSwapTradeRoute } from '../types'
 import { MAINNET_WTRX_ADDRESS, TESTNET_WTRX_ADDRESS } from '../constants/constants'
 import { toBase58 } from '../utils/addressConvert'
+import { nextCurrency } from './routePath'
 
 const UINT160_MAX = (1n << 160n) - 1n
 const UINT256_MAX = (1n << 256n) - 1n
@@ -30,41 +31,8 @@ function amount(value: bigint, name: string, max = UINT256_MAX, positive = false
   }
 }
 
-function raw(value: unknown, name: string): bigint {
-  if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new Error(`Invalid Exact-Out ${name}`)
-  const result = BigInt(value)
-  amount(result, name)
-  return result
-}
-
 function bips(value: number): void {
   if (!Number.isInteger(value) || value < 0 || value >= 10000) throw new Error('Invalid Exact-Out referral bips')
-}
-
-export function parseExactOutFields(data: ExactOutRouteData): Pick<ExactOutSwapTradeRoute,
-  'maximumAmountIn' | 'amountOut' | 'grossAmountOut' | 'outputReferralBips'> {
-  const count = data.poolVersions?.length
-  if (!count || !Array.isArray(data.tokens) || data.tokens.length !== count + 1) {
-    throw new Error('Invalid Exact-Out path length')
-  }
-  // QS appends a display-only "0" after the per-hop fees, as in Exact-In.
-  if (!Array.isArray(data.poolFees) || data.poolFees.length < count) throw new Error('Missing Exact-Out pool fees')
-  if (!Array.isArray(data.poolKeys) || data.poolKeys.length !== count) {
-    throw new Error('Invalid Exact-Out pool keys')
-  }
-  const inputReferralBips = data.amountInReferralBips ?? 0
-  const outputReferralBips = data.amountOutReferralBips ?? 0
-  bips(inputReferralBips)
-  bips(outputReferralBips)
-  if (inputReferralBips !== 0) {
-    throw new Error('Exact-Out input referral is not supported; use output referral')
-  }
-  return {
-    maximumAmountIn: raw(data.amountInMaximumRaw, 'amountInMaximumRaw'),
-    amountOut: raw(data.amountOutRaw, 'amountOutRaw'),
-    grossAmountOut: raw(data.grossAmountOutRaw, 'grossAmountOutRaw'),
-    outputReferralBips,
-  }
 }
 
 export function validateExactOutRoute(route: ExactOutSwapTradeRoute): void {
@@ -97,10 +65,8 @@ export function validateExactOutRoute(route: ExactOutSwapTradeRoute): void {
     const pool = route.pools[i]
     const a = exactOutAddress(pool.currency0.hex)
     const b = exactOutAddress(pool.currency1.hex)
-    if (a >= b || (!currency.Equal(pool.currency0) && !currency.Equal(pool.currency1))) {
-      throw new Error('Invalid Exact-Out pool currencies')
-    }
-    const next = currency.Equal(pool.currency0) ? pool.currency1 : pool.currency0
+    if (a >= b) throw new Error('Invalid Exact-Out pool currencies')
+    const next = nextCurrency(pool, currency)
     let key = `${pool.type}:${a}:${b}`
     if (pool.type === PoolType.WTRX) {
       const wrapped = pool.currency0.isNative ? pool.currency1 : pool.currency0

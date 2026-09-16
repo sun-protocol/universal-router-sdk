@@ -1,19 +1,25 @@
-import { SwapTradeRoute, ExactInSwapTradeRoute, ExactOutSwapTradeRoute, ExactInRouteData, ExactOutRouteData,
-  Pool, Currency, Permit2Signature, PoolKey, PoolVersion, RouteData } from '../types'
+import { MAINNET_WTRX_ADDRESS, TESTNET_WTRX_ADDRESS, TRX_ADDRESS } from '../constants/constants'
 import {
+  Address,
+  Currency,
+  ExactInRouteData,
+  ExactInSwapTradeRoute,
+  ExactOutRouteData,
+  ExactOutSwapTradeRoute,
+  getPoolFlag,
+  newHTXSunPool,
+  newPSMPool,
+  newStablePool,
   newV1Pool,
   newV2Pool,
   newV3Pool,
   newV4Pool,
-  newStablePool,
-  newPSMPool,
-  newHTXSunPool,
   newWTRXPool,
-  getPoolFlag,
+  Pool,
+  PoolKey, PoolVersion, RouteData,
+  SwapTradeRoute
 } from '../types'
-import { TESTNET_WTRX_ADDRESS, MAINNET_WTRX_ADDRESS, TRX_ADDRESS } from '../constants/constants'
-import { Address } from '../types'
-import { exactOutAddress, parseExactOutFields, validateExactOutRoute, validateTradeType } from './exactOut'
+import { exactOutAddress, validateExactOutRoute, validateTradeType } from './exactOut'
 
 export interface ParseRouteOptions {
   /**
@@ -54,51 +60,18 @@ export function parseRouteAPIResponse(
   options?: ParseRouteOptions
 ): SwapTradeRoute {
   validateTradeType(routeData.tradeType)
-  const exactOutFields = routeData.tradeType === 'EXACT_OUT' ? parseExactOutFields(routeData) : undefined
-  if (exactOutFields && (options?.slippage != null || options?.slippageBips != null)) {
-    throw new Error('Exact-Out uses the quoted maximum input; slippage overrides are not supported')
-  }
-  const tokens = exactOutFields ? routeData.tokens.map(exactOutAddress) : routeData.tokens
-  const pools: Pool[] = []
-  for (let i = 0; i < routeData.poolVersions.length; i++) {
-    const poolVersion = routeData.poolVersions[i]
-    if (exactOutFields) {
-      if (!['v1', 'v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(poolVersion)) {
-        throw new Error('Unsupported Exact-Out pool version')
-      }
-      const wrapped = (isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS).hex.toLowerCase()
-      const isWrapPair = (tokens[i] === TRX_ADDRESS.hex && tokens[i + 1] === wrapped) ||
-        (tokens[i] === wrapped && tokens[i + 1] === TRX_ADDRESS.hex)
-      if (poolVersion === 'wtrx' && !isWrapPair) {
-        throw new Error('Invalid Exact-Out wrap pair')
-      }
-      const key = routeData.poolKeys[i]
-      if (!isWrapPair && poolVersion === 'v4' && (!key ||
-          exactOutAddress(key.token0) !== [tokens[i], tokens[i + 1]].sort()[0] ||
-          exactOutAddress(key.token1) !== [tokens[i], tokens[i + 1]].sort()[1])) {
-        throw new Error('V4 poolKey does not match route tokens')
-      }
-      if (key) exactOutAddress(key.hooks)
-    }
-    const pool = poolVersionToPoolType({
-      poolVersionStr: poolVersion,
-      input: tokens[i],
-      output: tokens[i + 1],
-      fee: Number(routeData.poolFees[i]),
-      poolKey: exactOutFields && routeData.poolKeys[i]
-        ? { ...routeData.poolKeys[i]!, hooks: exactOutAddress(routeData.poolKeys[i]!.hooks) }
-        : routeData.poolKeys[i] ?? undefined,
-      isTestnet: isTestnet,
-    })
-    pools.push(pool)
-  }
+  return routeData.tradeType === 'EXACT_OUT'
+    ? parseExactOutRoute(routeData, isTestnet, options)
+    : parseExactInRoute(routeData, isTestnet, options)
+}
 
+function parseExactInRoute(data: ExactInRouteData, isTestnet: boolean, options?: ParseRouteOptions): ExactInSwapTradeRoute {
   let minimumAmountOut: bigint = 0n
-  if (routeData.tradeType !== 'EXACT_OUT' && routeData.amountOutMinimumRaw) {
-    minimumAmountOut = BigInt(routeData.amountOutMinimumRaw)
+  if (data.amountOutMinimumRaw) {
+    minimumAmountOut = BigInt(data.amountOutMinimumRaw)
   }
   if (options && (options.slippage != null || options.slippageBips != null)) {
-    const amountOutRawBigInt = BigInt(routeData.amountOutRaw)
+    const amountOutRawBigInt = BigInt(data.amountOutRaw)
 
     if (options.slippageBips != null) {
       const bps = options.slippageBips
@@ -120,21 +93,96 @@ export function parseRouteAPIResponse(
     }
   }
 
-  const common = {
-    pools: pools,
+
+  return {
+    pools: parsePools(data, isTestnet),
+    input: new Currency(data.tokens[0]),
+    output: new Currency(data.tokens[data.tokens.length - 1]),
+    amountIn: BigInt(data.amountInRaw),
+    minimumAmountOut,
+  }
+}
+
+function parseExactOutRoute(data: ExactOutRouteData, isTestnet: boolean, options?: ParseRouteOptions): ExactOutSwapTradeRoute {
+  validateExactOutPayload(data)
+  const fields = parseExactOutFields(data)
+  if (options?.slippage != null || options?.slippageBips != null) {
+    throw new Error('Exact-Out uses the quoted maximum input; slippage overrides are not supported')
+  }
+  const tokens = data.tokens.map(exactOutAddress)
+  const wrapped = (isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS).hex.toLowerCase()
+  const poolKeys = data.poolVersions.map((version, i) => {
+    if (!['v1', 'v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(version)) {
+      throw new Error('Unsupported Exact-Out pool version')
+    }
+    const isWrapPair = (tokens[i] === TRX_ADDRESS.hex && tokens[i + 1] === wrapped) ||
+      (tokens[i] === wrapped && tokens[i + 1] === TRX_ADDRESS.hex)
+    if (version === 'wtrx' && !isWrapPair) throw new Error('Invalid Exact-Out wrap pair')
+    const key = data.poolKeys[i]
+    if (!isWrapPair && version === 'v4' && (!key ||
+      exactOutAddress(key.token0) !== [tokens[i], tokens[i + 1]].sort()[0] ||
+      exactOutAddress(key.token1) !== [tokens[i], tokens[i + 1]].sort()[1])) {
+      throw new Error('V4 poolKey does not match route tokens')
+    }
+    return key ? { ...key, hooks: exactOutAddress(key.hooks) } : key
+  })
+  if (!/^\d+$/.test(data.amountInRaw)) throw new Error('Invalid Exact-Out amountInRaw')
+  const route: ExactOutSwapTradeRoute = {
+    pools: parsePools({ ...data, tokens, poolKeys }, isTestnet),
     input: new Currency(tokens[0]),
     output: new Currency(tokens[tokens.length - 1]),
-    amountIn: BigInt(routeData.amountInRaw),
+    amountIn: BigInt(data.amountInRaw),
+    tradeType: 'EXACT_OUT',
+    ...fields,
   }
+  validateExactOutRoute(route)
+  return route
+}
 
-  if (exactOutFields) {
-    if (!/^\d+$/.test(routeData.amountInRaw)) throw new Error('Invalid Exact-Out amountInRaw')
-    const route: ExactOutSwapTradeRoute = { ...common, tradeType: 'EXACT_OUT', ...exactOutFields }
-    validateExactOutRoute(route)
-    return route
+function parseExactOutFields(data: ExactOutRouteData): Pick<ExactOutSwapTradeRoute,
+  'maximumAmountIn' | 'amountOut' | 'grossAmountOut' | 'outputReferralBips'> {
+  const inputReferralBips = data.amountInReferralBips ?? 0
+  const outputReferralBips = data.amountOutReferralBips ?? 0
+  for (const bips of [inputReferralBips, outputReferralBips]) {
+    if (!Number.isInteger(bips) || bips < 0 || bips >= 10_000) {
+      throw new Error('Invalid Exact-Out referral bips')
+    }
   }
+  if (inputReferralBips !== 0) {
+    throw new Error('Exact-Out input referral is not supported; use output referral')
+  }
+  return {
+    maximumAmountIn: parseExactOutRaw(data.amountInMaximumRaw, 'amountInMaximumRaw'),
+    amountOut: parseExactOutRaw(data.amountOutRaw, 'amountOutRaw'),
+    grossAmountOut: parseExactOutRaw(data.grossAmountOutRaw, 'grossAmountOutRaw'),
+    outputReferralBips,
+  }
+}
 
-  return { ...common, minimumAmountOut }
+function parseExactOutRaw(value: unknown, name: string): bigint {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new Error(`Invalid Exact-Out ${name}`)
+  return BigInt(value)
+}
+
+function validateExactOutPayload(data: ExactOutRouteData): void {
+  const count = data.poolVersions?.length
+  if (!count || !Array.isArray(data.tokens) || data.tokens.length !== count + 1) {
+    throw new Error('Invalid Exact-Out path length')
+  }
+  // QS appends a display-only zero after the per-hop fees.
+  if (!Array.isArray(data.poolFees) || data.poolFees.length < count) throw new Error('Missing Exact-Out pool fees')
+  if (!Array.isArray(data.poolKeys) || data.poolKeys.length !== count) throw new Error('Invalid Exact-Out pool keys')
+}
+
+function parsePools(data: RouteData, isTestnet: boolean): Pool[] {
+  return data.poolVersions.map((poolVersion, i) => poolVersionToPoolType({
+    poolVersionStr: poolVersion,
+    input: data.tokens[i],
+    output: data.tokens[i + 1],
+    fee: Number(data.poolFees[i]),
+    poolKey: data.poolKeys[i] ?? undefined,
+    isTestnet,
+  }))
 }
 
 export function poolVersionToPoolType({
