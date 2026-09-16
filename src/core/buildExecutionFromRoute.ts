@@ -90,18 +90,18 @@ export function buildExecutionFromRoute(route: SwapTradeRoute): SwapExecutionPla
     }
   }
 
-  const plan: SwapExecutionPlan = {
-    ...(route.tradeType === 'EXACT_OUT' ? { tradeType: route.tradeType, exactOut: route.exactOut } : {}),
+  const common = {
     path: path,
     input: route.input,
     output: route.output,
     amountIn: route.amountIn,
-    // amountOut: 0n, // useless for now
-    // maximumAmountIn: 0n, // useless for now
-    minimumAmountOut: route.minimumAmountOut,
     sections: sections,
     recipient: route.recipient,
   }
 
-  return plan
+  if (route.tradeType === 'EXACT_OUT') {
+    const { maximumAmountIn, amountOut, grossAmountOut, outputReferralBips } = route
+    return { ...common, tradeType: 'EXACT_OUT', maximumAmountIn, amountOut, grossAmountOut, outputReferralBips }
+  }
+  return { ...common, tradeType: route.tradeType, minimumAmountOut: route.minimumAmountOut }
 }

@@ -1,4 +1,5 @@
-import { SwapTradeRoute, Pool, Currency, Permit2Signature, PoolKey, PoolVersion, RouteData } from '../types'
+import { SwapTradeRoute, ExactInSwapTradeRoute, ExactOutSwapTradeRoute, ExactInRouteData, ExactOutRouteData,
+  Pool, Currency, Permit2Signature, PoolKey, PoolVersion, RouteData } from '../types'
 import {
   newV1Pool,
   newV2Pool,
@@ -12,7 +13,7 @@ import {
 } from '../types'
 import { TESTNET_WTRX_ADDRESS, MAINNET_WTRX_ADDRESS, TRX_ADDRESS } from '../constants/constants'
 import { Address } from '../types'
-import { exactOutAddress, parseExactOutAmounts, validateExactOutRoute, validateTradeType } from './exactOut'
+import { exactOutAddress, parseExactOutFields, validateExactOutRoute, validateTradeType } from './exactOut'
 
 export interface ParseRouteOptions {
   /**
@@ -33,20 +34,35 @@ export interface ParseRouteOptions {
  * For slippage, pass {@link ParseRouteOptions.slippageBips} when possible; see deprecation on {@link ParseRouteOptions.slippage}.
  */
 export function parseRouteAPIResponse(
+  routeData: ExactOutRouteData,
+  isTestnet: boolean,
+  options?: ParseRouteOptions
+): ExactOutSwapTradeRoute
+export function parseRouteAPIResponse(
+  routeData: ExactInRouteData,
+  isTestnet: boolean,
+  options?: ParseRouteOptions
+): ExactInSwapTradeRoute
+export function parseRouteAPIResponse(
+  routeData: RouteData,
+  isTestnet: boolean,
+  options?: ParseRouteOptions
+): SwapTradeRoute
+export function parseRouteAPIResponse(
   routeData: RouteData,
   isTestnet: boolean,
   options?: ParseRouteOptions
 ): SwapTradeRoute {
   validateTradeType(routeData.tradeType)
-  const exactOut = routeData.tradeType === 'EXACT_OUT' ? parseExactOutAmounts(routeData) : undefined
-  if (exactOut && (options?.slippage != null || options?.slippageBips != null)) {
+  const exactOutFields = routeData.tradeType === 'EXACT_OUT' ? parseExactOutFields(routeData) : undefined
+  if (exactOutFields && (options?.slippage != null || options?.slippageBips != null)) {
     throw new Error('Exact-Out uses the quoted maximum input; slippage overrides are not supported')
   }
-  const tokens = exactOut ? routeData.tokens.map(exactOutAddress) : routeData.tokens
+  const tokens = exactOutFields ? routeData.tokens.map(exactOutAddress) : routeData.tokens
   const pools: Pool[] = []
   for (let i = 0; i < routeData.poolVersions.length; i++) {
     const poolVersion = routeData.poolVersions[i]
-    if (exactOut) {
+    if (exactOutFields) {
       if (!['v1', 'v2', 'v3', 'v4', 'usdt20psm', 'wtrx'].includes(poolVersion)) {
         throw new Error('Unsupported Exact-Out pool version')
       }
@@ -69,7 +85,7 @@ export function parseRouteAPIResponse(
       input: tokens[i],
       output: tokens[i + 1],
       fee: Number(routeData.poolFees[i]),
-      poolKey: exactOut && routeData.poolKeys[i]
+      poolKey: exactOutFields && routeData.poolKeys[i]
         ? { ...routeData.poolKeys[i]!, hooks: exactOutAddress(routeData.poolKeys[i]!.hooks) }
         : routeData.poolKeys[i] ?? undefined,
       isTestnet: isTestnet,
@@ -78,7 +94,7 @@ export function parseRouteAPIResponse(
   }
 
   let minimumAmountOut: bigint = 0n
-  if (!exactOut && routeData.amountOutMinimumRaw) {
+  if (routeData.tradeType !== 'EXACT_OUT' && routeData.amountOutMinimumRaw) {
     minimumAmountOut = BigInt(routeData.amountOutMinimumRaw)
   }
   if (options && (options.slippage != null || options.slippageBips != null)) {
@@ -104,21 +120,21 @@ export function parseRouteAPIResponse(
     }
   }
 
-  const route: SwapTradeRoute = {
-    ...(exactOut ? { tradeType: 'EXACT_OUT' as const, exactOut } : {}),
+  const common = {
     pools: pools,
     input: new Currency(tokens[0]),
     output: new Currency(tokens[tokens.length - 1]),
     amountIn: BigInt(routeData.amountInRaw),
-    minimumAmountOut: minimumAmountOut,
   }
 
-  if (exactOut) {
+  if (exactOutFields) {
     if (!/^\d+$/.test(routeData.amountInRaw)) throw new Error('Invalid Exact-Out amountInRaw')
+    const route: ExactOutSwapTradeRoute = { ...common, tradeType: 'EXACT_OUT', ...exactOutFields }
     validateExactOutRoute(route)
+    return route
   }
 
-  return route
+  return { ...common, minimumAmountOut }
 }
 
 export function poolVersionToPoolType({

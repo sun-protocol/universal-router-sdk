@@ -97,42 +97,35 @@ Uniswap 用于对照原生币预算、退款和不足额输出保护。其 V4 �
 | JSON 字段 | Exact-Out 含义 |
 | --- | --- |
 | tradeType | EXACT_OUT |
-| amountInRaw | 预计总输入 T = 预计路由输入 R + 本次输入分佣 F；两种输入币种统一此含义 |
+| amountInRaw | 预计路由输入 R |
 | amountInMaximumRaw | 最大总输入 Tmax |
 | amountOutRaw | 用户净输出目标 N |
-| amountInRawReferral | QS 计算的本次输入分佣 F；ERC20 基于预计总输入，TRX 基于最大总输入；字段顺序是 RawReferral |
-| amountOutRawReferral | 报价毛输出对应的输出分佣 |
-| amountInReferralBips / amountOutReferralBips | 对应费率，当前不同时启用 |
-| stepAmountsInRaw / stepAmountsOutRaw | 按 tokens 正向顺序排列的逐跳预计输入及输出目标 |
+| amountInReferralBips / amountOutReferralBips | 输入费率必须为零；输出费率由 PAY_REFERRAL 使用 |
+| grossAmountOutRaw | 末跳毛输出目标 G，包含输出返佣和代币粒度取整 |
 | poolVersions / poolKeys / poolFees | 协议与池信息；V4 编码以 poolKey 为准 |
 
 外部字段以 `quote_service/graph/quote.go` 当前结构为准，不沿用临时草稿中可能拼错的字段名。格式化金额只用于展示，运算和编码一律使用 raw 字符串转 bigint。
 
-兼容 QS 的现有响应格式：poolFees 按路径跳数读取，忽略末尾展示用的 "0"。Exact-Out 与 Exact-In 一致，优先将当前网络的 TRX/WTRX 币对识别为包装，不由 poolVersions 区分包装与真实交换，兼容 QS 的 v2 标记。不再返回或要求逐跳执行模式字段；SDK 按币对和整笔 tradeType 编码。仍校验逐跳金额数组长度及入口/出口边界。
+兼容 QS 的现有响应格式：poolFees 按路径跳数读取，忽略末尾展示用的 "0"。Exact-Out 与 Exact-In 一致，优先将当前网络的 TRX/WTRX 币对识别为包装，不由 poolVersions 区分包装与真实交换，兼容 QS 的 v2 标记。不再返回或要求逐跳执行模式及逐跳 raw 金额字段；SDK 按币对、整笔 tradeType 和 grossAmountOutRaw 编码。
 
-内部为 SwapTradeRoute 和 SwapExecutionPlan 增加可选交易类型及 Exact-Out 金额详情；详情集中保存 maximumAmountIn、目标输出、毛输出、分佣及逐跳数据。旧的 amountIn、minimumAmountOut 保持原语义；Exact-Out 编码明确读取目标输出与最大输入，不能把 amountIn 当作固定扣款。
+SwapTradeRoute 和 SwapExecutionPlan 使用 Exact-In / Exact-Out 判别联合。Exact-Out 详情集中保存 maximumAmountIn、目标输出、毛输出及返佣费率，不携带 Exact-In 的 minimumAmountOut。Exact-Out 编码明确读取目标输出与最大输入，不能把 amountIn 当作固定扣款。
 
-当前解析器对 Exact-Out 返回 `minimumAmountOut = 0n`，该旧字段仅用于 Exact-In。Exact-Out 的展示与二次校验应读取 `route.exactOut.amountOut`（扣除分佣后的净目标）。API 类型中的 `amountOutMinimum` / `amountOutMinimumRaw` 为可选，读取方需处理 `undefined`。
+Exact-Out 的展示与二次校验读取 `route.amountOut`（扣除分佣后的净目标）。内部与 API 联合类型都只在 Exact-In 分支提供 minimumAmountOut 或 amountOutMinimum 字段。
 
 推荐保持原接口形状，通过运行时校验保证 EXACT_OUT 必须携带完整详情；不要为了类型重构破坏已有调用者的 interface 扩展或对象构造。
 
 ### 3.3 数值关系
 
-设预计路由输入 R，输入分佣 F，总预计输入 T，总预算 Tmax，末跳毛目标 G，净目标 N。QS 先计算完整滑点预算 B，再按输入币种计算总额：
+设预计路由输入 R，最大输入预算 Tmax，末跳毛目标 G，净目标 N，输出返佣费率 f：
 
 ```text
-B = R + floor(R × slippageBips / 10000)
 grossForNet(n, f) = floor((n - 1) × 10000 / (10000 - f)) + 1
-ERC20：T = grossForNet(R, f)，F = floor(T × f / 10000)，Tmax = B + F
-TRX：  Tmax = grossForNet(B, f)，F = floor(Tmax × f / 10000)，T = R + F
-两者统一：amountInRaw = T，amountInRawReferral = F，amountInMaximumRaw = Tmax
-可用路由预算 Rmax = Tmax - F = B
+amountInRaw = R
+amountInMaximumRaw = Tmax
 G - floor(G × outputBips / 10000) >= N
 ```
 
-amountInRaw 统一表示预计路由输入加本次输入分佣，不包含未使用的滑点预留。原生 TRX 分佣按最大预付款确定，所以分佣和预计总输入可能随请求滑点变化；ERC20（包括 WTRX）保持现有计算。
-
-SDK 直接使用 QS 返回的 Tmax、F、T 和 G，仅做字段与预算一致性校验，不维护 TRX 的另一套报价修正逻辑，不重算执行分佣或缩减承诺的滑点预算。无历史余额时执行分佣就是 F，不再另设与 QS 不同的 F。QS 输出组装必须同时使用已计算的 F 填充 raw 和展示字段，避免共用 Exact-In 格式化逻辑按 T 再算一次。输出分佣若基于实际产出计算，可能随协议余量增大；最终仍须保证净输出下限。
+Exact-Out 不支持输入端返佣。SDK 使用 QS 返回的 Tmax、G、N 和输出返佣费率，按费率推导预期净输出以提前拒绝必然失败的报价。SDK 不读取 QS 的 raw 返佣金额字段；实际输出佣金由链上 PAY_REFERRAL 根据 Router 的输出余额和费率计算，最终由 SWEEP 保证用户的净输出下限。
 
 校验非负整数、正目标、数组长度、相邻币种、金额连续性、预算关系及实际 ABI 边界：Permit2 和本地 SWEEP 的 uint160、V4 的 uint128/有符号转换、V3 的有符号金额等。所有检查发生在公开命令状态被修改之前。
 
@@ -232,7 +225,7 @@ Exact-In 的输入固定，按适用分佣计算可转换金额并检查最低�
 
 #### Exact-Out 目标流程
 
-允许单跳纯包装，不要求路径包含实际交换。逐跳输入与输出必须相等，仍校验预算、分佣和净输出目标。
+允许单跳纯包装，不要求路径包含实际交换，仍校验预算、分佣和净输出目标。
 
 - TRX → WTRX：callValue = Tmax；如有输入分佣，先按 Tmax 收取 F；仅包装毛目标 G。输出分佣后 SWEEP(WTRX, recipient, N)，最后 SWEEP(TRX, recipient, 0) 退回余款，不再追加解包命令。
 - WTRX → TRX：仅从用户拉取预计总输入 T；如有输入分佣，先扣除 F，再解包剩余 WTRX。不拉取 Tmax - T 的滑点预留。输出分佣后 SWEEP(TRX, recipient, N)。

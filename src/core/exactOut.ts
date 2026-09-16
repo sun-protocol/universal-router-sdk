@@ -1,5 +1,5 @@
 import { Hex } from 'viem'
-import { Address, ExactOutAmounts, PoolType, PoolFlag, RouteData, SwapTradeRoute } from '../types'
+import { Address, PoolType, PoolFlag, ExactOutRouteData, ExactOutSwapTradeRoute } from '../types'
 import { MAINNET_WTRX_ADDRESS, TESTNET_WTRX_ADDRESS } from '../constants/constants'
 import { toBase58 } from '../utils/addressConvert'
 
@@ -41,64 +41,52 @@ function bips(value: number): void {
   if (!Number.isInteger(value) || value < 0 || value >= 10000) throw new Error('Invalid Exact-Out referral bips')
 }
 
-export function parseExactOutAmounts(data: RouteData): ExactOutAmounts {
+export function parseExactOutFields(data: ExactOutRouteData): Pick<ExactOutSwapTradeRoute,
+  'maximumAmountIn' | 'amountOut' | 'grossAmountOut' | 'outputReferralBips'> {
   const count = data.poolVersions?.length
   if (!count || !Array.isArray(data.tokens) || data.tokens.length !== count + 1) {
     throw new Error('Invalid Exact-Out path length')
   }
   // QS appends a display-only "0" after the per-hop fees, as in Exact-In.
   if (!Array.isArray(data.poolFees) || data.poolFees.length < count) throw new Error('Missing Exact-Out pool fees')
-  for (const values of [data.poolKeys, data.stepAmountsInRaw, data.stepAmountsOutRaw]) {
-    if (!Array.isArray(values) || values.length !== count) throw new Error('Invalid Exact-Out step arrays')
+  if (!Array.isArray(data.poolKeys) || data.poolKeys.length !== count) {
+    throw new Error('Invalid Exact-Out pool keys')
   }
-  const stepAmountsIn = data.stepAmountsInRaw!.map(value => raw(value, 'stepAmountsInRaw'))
-  const stepAmountsOut = data.stepAmountsOutRaw!.map(value => raw(value, 'stepAmountsOutRaw'))
+  const inputReferralBips = data.amountInReferralBips ?? 0
+  const outputReferralBips = data.amountOutReferralBips ?? 0
+  bips(inputReferralBips)
+  bips(outputReferralBips)
+  if (inputReferralBips !== 0) {
+    throw new Error('Exact-Out input referral is not supported; use output referral')
+  }
   return {
     maximumAmountIn: raw(data.amountInMaximumRaw, 'amountInMaximumRaw'),
     amountOut: raw(data.amountOutRaw, 'amountOutRaw'),
-    grossAmountOut: stepAmountsOut[count - 1],
-    inputReferral: raw(data.amountInRawReferral, 'amountInRawReferral'),
-    outputReferral: raw(data.amountOutRawReferral, 'amountOutRawReferral'),
-    inputReferralBips: data.amountInReferralBips ?? 0,
-    outputReferralBips: data.amountOutReferralBips ?? 0,
-    stepAmountsIn,
-    stepAmountsOut,
+    grossAmountOut: raw(data.grossAmountOutRaw, 'grossAmountOutRaw'),
+    outputReferralBips,
   }
 }
 
-export function validateExactOutRoute(route: SwapTradeRoute): void {
+export function validateExactOutRoute(route: ExactOutSwapTradeRoute): void {
   for (const currency of [route.input, route.output]) {
     const hex = exactOutAddress(currency.hex)
     if (currency.isNative !== (hex === '0x0000000000000000000000000000000000000000')) {
       throw new Error('Inconsistent Exact-Out native currency')
     }
   }
-  const details = route.exactOut
-  if (!details) throw new Error('EXACT_OUT requires exactOut amounts')
-  const { maximumAmountIn, amountOut, grossAmountOut, inputReferral, outputReferral,
-    inputReferralBips, outputReferralBips, stepAmountsIn, stepAmountsOut } = details
-  bips(inputReferralBips)
+  const { maximumAmountIn, amountOut, grossAmountOut,
+    outputReferralBips } = route
   bips(outputReferralBips)
-  if (inputReferralBips !== 0 || inputReferral !== 0n) {
-    throw new Error('Exact-Out input referral is not supported; use output referral')
-  }
   amount(route.amountIn, 'amountIn', UINT256_MAX, true)
   amount(maximumAmountIn, 'maximumAmountIn', route.input.isNative ? UINT256_MAX : UINT160_MAX, true)
   amount(amountOut, 'amountOut', UINT160_MAX, true)
   amount(grossAmountOut, 'grossAmountOut', UINT256_MAX, true)
-  amount(inputReferral, 'inputReferral')
-  amount(outputReferral, 'outputReferral')
-  if (outputReferral !== grossAmountOut * BigInt(outputReferralBips) / 10000n ||
-      grossAmountOut - outputReferral < amountOut || maximumAmountIn < route.amountIn) {
+  const outputReferral = grossAmountOut * BigInt(outputReferralBips) / 10000n
+  if (grossAmountOut - outputReferral < amountOut || maximumAmountIn < route.amountIn) {
     throw new Error('Inconsistent Exact-Out budget or referral amounts')
   }
   const count = route.pools.length
-  if (!count || stepAmountsIn?.length !== count || stepAmountsOut?.length !== count) {
-    throw new Error('Invalid Exact-Out step arrays')
-  }
-  if (stepAmountsIn[0] !== route.amountIn || stepAmountsOut[count - 1] !== grossAmountOut) {
-    throw new Error('Inconsistent Exact-Out endpoint amounts')
-  }
+  if (!count) throw new Error('Invalid Exact-Out path')
   const seen = new Set<string>()
   let currency = route.input
   let protocol: PoolType | undefined
@@ -113,16 +101,14 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
       throw new Error('Invalid Exact-Out pool currencies')
     }
     const next = currency.Equal(pool.currency0) ? pool.currency1 : pool.currency0
-    amount(stepAmountsIn[i], 'step input', UINT256_MAX, true)
-    amount(stepAmountsOut[i], 'step output', UINT256_MAX, true)
-    if (i && stepAmountsOut[i - 1] !== stepAmountsIn[i]) throw new Error('Discontinuous Exact-Out amounts')
     let key = `${pool.type}:${a}:${b}`
     if (pool.type === PoolType.WTRX) {
       const wrapped = pool.currency0.isNative ? pool.currency1 : pool.currency0
       if (!pool.currency0.isNative ||
           (!wrapped.Equal(MAINNET_WTRX_ADDRESS) && !wrapped.Equal(TESTNET_WTRX_ADDRESS)) ||
-          !(i === 0 && currency.isNative || i === count - 1 && next.isNative) ||
-          stepAmountsIn[i] !== stepAmountsOut[i]) throw new Error('Unsupported Exact-Out wrap boundary')
+          !(i === 0 && currency.isNative || i === count - 1 && next.isNative)) {
+        throw new Error('Unsupported Exact-Out wrap boundary')
+      }
     } else {
       if (![PoolType.V1, PoolType.V2, PoolType.V3, PoolType.V4, PoolType.PSM].includes(pool.type) ||
           (protocol !== undefined && protocol !== pool.type)) throw new Error('Unsupported Exact-Out protocol mix')
@@ -140,23 +126,18 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
         if (!Number.isInteger(pool.fee) || pool.fee < 0 || pool.fee > 0xffffff) throw new Error('Invalid pool fee')
         key += `:${pool.fee}`
       }
-      if (pool.type === PoolType.V3) {
-        amount(stepAmountsOut[i], 'V3 output', (1n << 255n) - 1n)
-      }
       if (pool.type === PoolType.V4) {
         const parameters = pool.parameters.replace(/^0x/, '')
         if (!/^[0-9a-fA-F]{64}$/.test(parameters)) throw new Error('Invalid V4 parameters')
         key += `:${exactOutAddress(pool.hooks.hex)}:${parameters.toLowerCase()}`
-        amount(stepAmountsIn[i], 'V4 input', (1n << 127n) - 1n)
-        amount(stepAmountsOut[i], 'V4 output', (1n << 127n) - 1n)
       }
       if (pool.type === PoolType.PSM) {
         if (swaps !== 1 || pool.flag !== PoolFlag.PSM) {
           throw new Error('Unsupported Exact-Out PSM pool')
         }
-        const gemToUsdd = stepAmountsOut[i] === stepAmountsIn[i] * PSM_RELATIVE_DECIMALS
-        const usddToGem = stepAmountsIn[i] % PSM_RELATIVE_DECIMALS === 0n &&
-          stepAmountsOut[i] === stepAmountsIn[i] / PSM_RELATIVE_DECIMALS
+        const gemToUsdd = grossAmountOut === route.amountIn * PSM_RELATIVE_DECIMALS
+        const usddToGem = route.amountIn % PSM_RELATIVE_DECIMALS === 0n &&
+          grossAmountOut === route.amountIn / PSM_RELATIVE_DECIMALS
         if (!gemToUsdd && !usddToGem) {
           throw new Error('Invalid PSM Exact-Out granularity')
         }
@@ -168,6 +149,8 @@ export function validateExactOutRoute(route: SwapTradeRoute): void {
   }
   if (!currency.Equal(route.output)) throw new Error('Invalid Exact-Out output currency')
   // Bounds on values actually encoded, including the headroom above the quoted input.
+  if (protocol === PoolType.V3) amount(grossAmountOut, 'V3 output', (1n << 255n) - 1n)
+  if (protocol === PoolType.V4) amount(grossAmountOut, 'V4 output', (1n << 127n) - 1n)
   if (protocol === PoolType.V4) amount(maximumAmountIn, 'V4 maximum input', (1n << 128n) - 1n)
   const prepaid = route.input.isNative || protocol === PoolType.V1
   if (swaps && ((swapInput.Equal(swapOutput) && (prepaid || protocol === PoolType.V4)) ||

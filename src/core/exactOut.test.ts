@@ -3,7 +3,7 @@ import { decodeAbiParameters, encodePacked, encodeAbiParameters, parseAbiParamet
 import { parseRouteAPIResponse } from './parseRouteAPIResponse'
 import { TradePlanner } from './TradePlanner'
 import { ABI_PARAMETER, CommandUsed } from './createCommand'
-import { Address, CommandType, RouteData } from '../types'
+import { Address, CommandType, ExactInRouteData, ExactOutRouteData, ExactOutSwapTradeRoute } from '../types'
 import { MAINNET_WTRX_ADDRESS, ADDRESS_THIS } from '../constants/constants'
 import { ACTIONS } from '../packages/v4/constants/actions'
 import { ACTIONS_ABI } from '../packages/v4/constants/actionsAbiParameters'
@@ -17,16 +17,22 @@ const WTRX = MAINNET_WTRX_ADDRESS.hex.toLowerCase()
 const recipient = new Address('0x4000000000000000000000000000000000000000')
 const parameters = `0x${'00'.repeat(29)}000100`
 
-export function quote(overrides: Partial<RouteData> = {}): RouteData {
+export function quote(overrides: Partial<ExactOutRouteData> = {}): ExactOutRouteData {
   return {
     tradeType: 'EXACT_OUT', amountIn: '100', amountInRaw: '100', amountOut: '50', amountOutRaw: '50',
-    amountInMaximumRaw: '110', amountInRawReferral: '0', amountOutRawReferral: '0',
+    amountInMaximum: '110', amountInMaximumRaw: '110',
     amountInReferralBips: 0, amountOutReferralBips: 0,
     inUsd: '0', outUsd: '0', impact: '0', fee: '0', containsUnverifiedHook: false,
     tokens: [A, B], symbols: ['A', 'B'], poolVersions: ['v2'], poolFees: ['3000'], poolKeys: [null],
-    stepAmountsOut: ['50'], stepAmountsInRaw: ['100'], stepAmountsOutRaw: ['50'],
+    stepAmountsOut: ['50'], grossAmountOutRaw: '50',
     ...overrides,
   }
+}
+
+function exactIn(data: ExactOutRouteData, tradeType?: 'EXACT_IN'): ExactInRouteData {
+  const { tradeType: _tradeType, amountInMaximum: _displayMaximum, amountInMaximumRaw: _maximum,
+    grossAmountOutRaw: _grossOutput, ...common } = data
+  return { ...common, tradeType, amountOutMinimum: data.amountOut, amountOutMinimumRaw: data.amountOutRaw }
 }
 
 function encode(data = quote(), options?: ConstructorParameters<typeof TradePlanner>[2]) {
@@ -44,22 +50,22 @@ function commands(planner: TradePlanner) {
   })
 }
 
-function v4(tokens = [A, B]): RouteData {
+function v4(tokens = [A, B]): ExactOutRouteData {
   return quote({ tokens, poolVersions: tokens.slice(1).map(() => 'v4'), poolFees: tokens.slice(1).map(() => '0'),
     poolKeys: tokens.slice(1).map((token, i) => ({ token0: [tokens[i], token].sort()[0], token1: [tokens[i], token].sort()[1],
       fee: 0x800000, hooks: TRX, parameters })),
-    stepAmountsInRaw: tokens.length === 2 ? ['100'] : ['100', '70'],
-    stepAmountsOutRaw: tokens.length === 2 ? ['50'] : ['70', '50'],
+    grossAmountOutRaw: '50',
   })
 }
 
 describe('Exact-Out parsing and admission', () => {
-  it('exposes the Exact-Out net target separately from the legacy minimum', () => {
-    const route = parseRouteAPIResponse(quote({ amountOutRaw: '49', amountOutRawReferral: '1',
-      amountOutReferralBips: 200, amountOutMinimumRaw: '123' }), false)
-    expect(route.minimumAmountOut).toBe(0n)
-    expect(route.exactOut!.amountOut).toBe(49n)
-    expect(route.exactOut!.grossAmountOut).toBe(50n)
+  it('exposes Exact-Out amounts without the Exact-In minimum', () => {
+    const route = parseRouteAPIResponse({ ...quote({ amountOutRaw: '49', amountOutReferralBips: 200 }),
+      amountOutMinimumRaw: '123' } as unknown as ExactOutRouteData, false)
+    expect('minimumAmountOut' in route).toBe(false)
+    if (route.tradeType !== 'EXACT_OUT') throw new Error('Expected Exact-Out route')
+    expect(route.amountOut).toBe(49n)
+    expect(route.grossAmountOut).toBe(50n)
   })
 
   it('ignores QS trailing poolFees without changing the encoded swap', () => {
@@ -67,7 +73,14 @@ describe('Exact-Out parsing and admission', () => {
     const actual = encode(quote({ poolVersions: ['v3'], poolFees: ['3000', '0'] }))
     expect([actual.commands, actual.inputs]).toEqual([expected.commands, expected.inputs])
     expect(() => encode(quote({ poolFees: [] }))).toThrow('pool fees')
-    expect(() => encode(quote({ stepAmountsInRaw: ['100', '0'] }))).toThrow('step arrays')
+    expect(() => encode(quote({ grossAmountOutRaw: undefined }))).toThrow('grossAmountOutRaw')
+  })
+
+  it('does not use formatted step outputs as the gross target', () => {
+    const data = v4([A, B, C])
+    const expected = encode(data)
+    const actual = encode({ ...data, stepAmountsOut: ['unused'] })
+    expect([actual.commands, actual.inputs]).toEqual([expected.commands, expected.inputs])
   })
 
   it.each(['WRAP', 'UNWRAP'] as const)('accepts QS v2-labelled %s boundaries', mode => {
@@ -75,8 +88,7 @@ describe('Exact-Out parsing and admission', () => {
     const data = quote({
       tokens: entry ? [TRX, WTRX, B] : [A, WTRX, TRX],
       poolVersions: ['v2', 'v2'], poolFees: entry ? ['0', '3000', '0'] : ['3000', '0', '0'],
-      poolKeys: [null, null], stepAmountsInRaw: entry ? ['100', '100'] : ['100', '50'],
-      stepAmountsOutRaw: entry ? ['100', '50'] : ['50', '50'],
+      poolKeys: [null, null], grossAmountOutRaw: '50',
     })
     const expected = encode({ ...data, poolVersions: entry ? ['wtrx', 'v2'] : ['v2', 'wtrx'] })
     for (const tokens of [data.tokens, data.tokens.map(token => new Address(token).base58)]) {
@@ -93,14 +105,14 @@ describe('Exact-Out parsing and admission', () => {
 
   it('rejects the old QS native input referral response', () => {
     expect(() => parseRouteAPIResponse({ ...v4([TRX, B]),
-      amountInRaw: '100009999', amountInMaximumRaw: '100999999', amountInRawReferral: '1009999',
-      amountInReferralBips: 100, stepAmountsInRaw: ['99000000'] }, false)).toThrow('input referral is not supported')
+      amountInRaw: '100009999', amountInMaximumRaw: '100999999',
+      amountInReferralBips: 100 }, false)).toThrow('input referral is not supported')
   })
 
   it.each([
-    { amountInMaximumRaw: undefined }, { amountInRawReferral: '-1' }, { amountInRaw: '0x64' },
-    { amountOutRaw: '0' }, { stepAmountsInRaw: [] },
-    { amountInMaximumRaw: '99' }, { amountInRawReferral: '1' }, { poolVersions: ['unknown'] },
+    { amountInMaximumRaw: undefined }, { amountInRaw: '0x64' },
+    { amountOutRaw: '0' }, { grossAmountOutRaw: undefined },
+    { amountInMaximumRaw: '99' }, { poolVersions: ['unknown'] },
     { tokens: [TRX, B] }, { amountInMaximumRaw: (1n << 160n).toString() },
   ])('rejects malformed quote %j', override => {
     expect(() => encode(quote(override))).toThrow()
@@ -123,23 +135,21 @@ describe('Exact-Out parsing and admission', () => {
     expect(() => new TradePlanner([route, route])).toThrow('one route')
     expect(() => encode(quote(), { tradeSpiltOptions: { enable: false, oneShotTransfer: true } })).toThrow('split')
     expect(() => encode(quote({ tokens: [A, B, C], poolVersions: ['v2', 'v3'], poolFees: ['3000', '3000'],
-      poolKeys: [null, null], stepAmountsInRaw: ['100', '70'], stepAmountsOutRaw: ['70', '50'],
+      poolKeys: [null, null], grossAmountOutRaw: '50',
       }))).toThrow('mix')
     const loop = v4([TRX, B, C, TRX])
-    loop.stepAmountsInRaw = ['100', '80', '60']
-    loop.stepAmountsOutRaw = ['80', '60', '50']
     expect(() => encode(loop)).toThrow('settlement combination')
   })
 
   it('validates manual routes as well as API routes', () => {
     const route = parseRouteAPIResponse(quote(), false)
-    route.exactOut!.inputReferral = 10n
+    route.outputReferralBips = 10_000
     expect(() => new TradePlanner([route])).toThrow('referral')
   })
 
   it('allows a user-paid V3 loop through distinct pools', () => {
     const planner = encode(quote({ tokens: [A, B, A], poolVersions: ['v3', 'v3'], poolFees: ['500', '3000'],
-      poolKeys: [null, null], stepAmountsInRaw: ['100', '70'], stepAmountsOutRaw: ['70', '50'],
+      poolKeys: [null, null], grossAmountOutRaw: '50',
       }))
     expect(commands(planner).map(c => c.type)).toEqual([CommandType.V3_SWAP_EXACT_OUT, CommandType.SWEEP])
   })
@@ -147,23 +157,22 @@ describe('Exact-Out parsing and admission', () => {
   it('rejects prepayment colliding with an unwrap output', () => {
     expect(() => encode(quote({ tokens: [TRX, WTRX, B, WTRX, TRX], poolVersions: ['wtrx', 'v3', 'v3', 'wtrx'],
       poolFees: ['0', '500', '3000', '0'], poolKeys: [null, null, null, null],
-      stepAmountsInRaw: ['100', '100', '70', '50'], stepAmountsOutRaw: ['100', '70', '50', '50'],
+      grossAmountOutRaw: '50',
       }))).toThrow()
   })
 
   it('enforces PSM output granularity without binding validation to deployment addresses', () => {
     const data = quote({ tokens: ['0xa614f803b6fd780986a42c78ec9c7f77e6ded13c', '0xe91a7411e56ce79e83570570f49b9fc35b7727c5'],
       poolVersions: ['usdt20psm'], amountInRaw: '1', amountInMaximumRaw: '2', amountOutRaw: '1000000000000',
-      stepAmountsInRaw: ['1'], stepAmountsOutRaw: ['1000000000000'] })
+      grossAmountOutRaw: '1000000000000' })
     expect(commands(encode(data))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
-    expect(() => encode({ ...data, stepAmountsOutRaw: ['999999999999'], amountOutRaw: '999999999999' })).toThrow('granularity')
+    expect(() => encode({ ...data, grossAmountOutRaw: '999999999999', amountOutRaw: '999999999999' })).toThrow('granularity')
     expect(commands(encode({ ...data, tokens: [A, B] }))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
 
     const reverse = quote({ tokens: [B, A], poolVersions: ['usdt20psm'], amountInRaw: '1000000000000',
-      amountInMaximumRaw: '1000000000001', amountOutRaw: '1', stepAmountsInRaw: ['1000000000000'],
-      stepAmountsOutRaw: ['1'] })
+      amountInMaximumRaw: '1000000000001', amountOutRaw: '1', grossAmountOutRaw: '1' })
     expect(commands(encode(reverse))[0].type).toBe(CommandType.PSM_SWAP_EXACT_OUT)
-    expect(() => encode({ ...reverse, amountInRaw: '1000000000001', stepAmountsInRaw: ['1000000000001'] }))
+    expect(() => encode({ ...reverse, amountInRaw: '1000000000001' }))
       .toThrow('granularity')
   })
 })
@@ -175,9 +184,8 @@ describe('Exact-Out commands and payments', () => {
       const outputFee = mode === 'output'
       const data = quote({ tokens: wrap ? [TRX, WTRX] : [WTRX, TRX],
         amountInRaw: '100', amountOutRaw: outputFee ? '99' : '100',
-        amountInRawReferral: '0', amountOutRawReferral: outputFee ? '1' : '0',
         amountInReferralBips: 0, amountOutReferralBips: outputFee ? 100 : 0,
-        stepAmountsInRaw: ['100'], stepAmountsOutRaw: ['100'],
+        grossAmountOutRaw: '100',
       })
       const outer = commands(encode(data, mode === 'none' ? undefined : {
         referralOptions: { mode, bps: 100, projectAddress: C },
@@ -224,7 +232,7 @@ describe('Exact-Out commands and payments', () => {
 
   it('V3 reverses tokens and fees together', () => {
     const planner = encode(quote({ tokens: [A, B, C], poolVersions: ['v3', 'v3'], poolFees: ['500', '3000'],
-      poolKeys: [null, null], stepAmountsInRaw: ['100', '70'], stepAmountsOutRaw: ['70', '50'],
+      poolKeys: [null, null], grossAmountOutRaw: '50',
       }))
     expect(commands(planner)[0].args[3]).toBe(encodePacked(['address', 'uint24', 'address', 'uint24', 'address'],
       [C, 3000, B, 500, A]))
@@ -233,8 +241,7 @@ describe('Exact-Out commands and payments', () => {
   it.each([[TRX, B], [A, TRX], [A, B], [A, TRX, B]])('encodes V1 Exact-Out endpoints %j', (...tokens) => {
     const planner = encode(quote({ tokens, poolVersions: tokens.slice(1).map(() => 'v1'),
       poolFees: tokens.slice(1).map(() => '0'), poolKeys: tokens.slice(1).map(() => null),
-      stepAmountsInRaw: tokens.length === 2 ? ['100'] : ['100', '70'],
-      stepAmountsOutRaw: tokens.length === 2 ? ['50'] : ['70', '50'],
+      grossAmountOutRaw: '50',
     }))
     const outer = commands(planner)
     expect(outer.map(command => command.type)).toEqual([CommandType.V1_SWAP_EXACT_OUT, CommandType.SWEEP, CommandType.SWEEP])
@@ -247,21 +254,23 @@ describe('Exact-Out commands and payments', () => {
   it.each([[A, B, C], [TRX, A, B], [A, TRX, B, C], [A, TRX, A]])('rejects unsupported V1 paths %j', (...tokens) => {
     const n = tokens.length - 1
     const data = quote({ tokens, poolVersions: Array(n).fill('v1'), poolFees: Array(n).fill('0'),
-      poolKeys: Array(n).fill(null), stepAmountsInRaw: ['100', ...Array(n - 1).fill('50')],
-      stepAmountsOutRaw: Array(n).fill('50') })
+      poolKeys: Array(n).fill(null), grossAmountOutRaw: '50' })
     expect(() => encode(data)).toThrow()
-    const route = parseRouteAPIResponse({ ...data, tradeType: 'EXACT_IN' }, false)
-    route.tradeType = 'EXACT_OUT'
-    route.exactOut = { ...parseRouteAPIResponse(quote(), false).exactOut!,
-      stepAmountsIn: data.stepAmountsInRaw!.map(BigInt), stepAmountsOut: data.stepAmountsOutRaw!.map(BigInt) }
+    const legacy = parseRouteAPIResponse(exactIn(data, 'EXACT_IN'), false)
+    const exactOut = parseRouteAPIResponse(quote(), false)
+    const route: ExactOutSwapTradeRoute = {
+      pools: legacy.pools, input: legacy.input, output: legacy.output, amountIn: legacy.amountIn,
+      recipient: legacy.recipient, tradeType: 'EXACT_OUT',
+      maximumAmountIn: exactOut.maximumAmountIn, amountOut: exactOut.amountOut,
+      grossAmountOut: exactOut.grossAmountOut, outputReferralBips: exactOut.outputReferralBips,
+    }
     expect(() => new TradePlanner([route])).toThrow()
   })
 
   it.each([true, false])('preserves V1 wrap boundaries (entry=%s)', entry => {
     const planner = encode(quote({ tokens: entry ? [TRX, WTRX, B] : [A, WTRX, TRX],
       poolVersions: entry ? ['v2', 'v1'] : ['v1', 'v2'], poolFees: ['0', '0'], poolKeys: [null, null],
-      stepAmountsInRaw: entry ? ['100', '100'] : ['100', '50'],
-      stepAmountsOutRaw: entry ? ['100', '50'] : ['50', '50'],
+      grossAmountOutRaw: '50',
     }))
     const outer = commands(planner)
     expect(outer.map(command => command.type)).toEqual(entry
@@ -274,7 +283,7 @@ describe('Exact-Out commands and payments', () => {
 
   it('charges V1 output referral before net output and input refund', () => {
     const outer = commands(encode(quote({ poolVersions: ['v1'], amountOutRaw: '49',
-      amountOutRawReferral: '1', amountOutReferralBips: 200 }),
+      amountOutReferralBips: 200 }),
     { referralOptions: { mode: 'output', bps: 200, projectAddress: C } }))
     expect(outer.map(command => command.type)).toEqual([CommandType.V1_SWAP_EXACT_OUT,
       CommandType.PAY_REFERRAL, CommandType.SWEEP, CommandType.SWEEP])
@@ -314,7 +323,7 @@ describe('Exact-Out commands and payments', () => {
 
   it('wraps the budget and unwraps the unused input before native refund', () => {
     const planner = encode(quote({ tokens: [TRX, WTRX, B], poolVersions: ['wtrx', 'v2'], poolFees: ['0', '3000'],
-      poolKeys: [null, null], stepAmountsInRaw: ['100', '100'], stepAmountsOutRaw: ['100', '50'],
+      poolKeys: [null, null], grossAmountOutRaw: '50',
       }))
     const outer = commands(planner)
     expect(outer.map(c => c.type)).toEqual([CommandType.WRAP_ETH, CommandType.V2_SWAP_EXACT_OUT,
@@ -323,16 +332,9 @@ describe('Exact-Out commands and payments', () => {
     expect(outer[1].args[4]).toBe(false)
   })
 
-  it.each([
-    { amountInRawReferral: '1', amountInReferralBips: 0 },
-    { amountInRawReferral: '0', amountInReferralBips: 1 },
-    { amountInRawReferral: '1', amountInReferralBips: 100 },
-  ])('rejects input referral amounts or rates in API and manual routes: %j', override => {
+  it.each([1, 100])('rejects input referral rates from the API: %j', amountInReferralBips => {
+    const override = { amountInReferralBips }
     expect(() => parseRouteAPIResponse(quote(override), false)).toThrow('input referral is not supported')
-    const route = parseRouteAPIResponse(quote(), false)
-    route.exactOut!.inputReferral = BigInt(override.amountInRawReferral)
-    route.exactOut!.inputReferralBips = override.amountInReferralBips
-    expect(() => new TradePlanner([route])).toThrow('input referral is not supported')
   })
 
   it.each(['v2', 'v3', 'v4', 'usdt20psm'])('charges output only after the %s swap and checks the net target', version => {
@@ -340,8 +342,8 @@ describe('Exact-Out commands and payments', () => {
     const data = quote({ ...(version === 'v4' ? v4() : {}), poolVersions: [version],
       ...(psm ? { tokens: ['0xe91a7411e56ce79e83570570f49b9fc35b7727c5',
         '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'], amountInRaw: '50000000000000',
-        amountInMaximumRaw: '55000000000000', stepAmountsInRaw: ['50000000000000'] } : {}),
-      amountOutRaw: '49', amountOutRawReferral: '1', amountOutReferralBips: 200 })
+        amountInMaximumRaw: '55000000000000' } : {}),
+      amountOutRaw: '49', amountOutReferralBips: 200 })
     const outer = commands(encode(data, { referralOptions: { mode: 'output', bps: 200, projectAddress: C } }))
     expect(outer).toHaveLength(3)
     expect(outer[1].type).toBe(CommandType.PAY_REFERRAL)
@@ -357,15 +359,21 @@ describe('Exact-Out commands and payments', () => {
     const before = [planner.commands, [...planner.inputs]]
     expect(() => planner.encode()).toThrow()
     expect([planner.commands, planner.inputs]).toEqual(before)
-    const withFee = quote({ amountOutRaw: '49', amountOutRawReferral: '1', amountOutReferralBips: 200 })
+    const withFee = quote({ amountOutRaw: '49', amountOutReferralBips: 200 })
     expect(() => encode(withFee)).toThrow('match')
     expect(() => encode(withFee, { referralOptions: { mode: 'output', bps: 100, projectAddress: C } })).toThrow('match')
   })
 
   it('keeps default and explicit Exact-In encoding identical', () => {
     for (const data of [quote(), v4(), quote({ poolVersions: ['v3'] })]) {
-      const implicit = encode({ ...data, tradeType: undefined })
-      const explicit = encode({ ...data, tradeType: 'EXACT_IN' })
+      const implicitRoute = parseRouteAPIResponse(exactIn(data), false)
+      const explicitRoute = parseRouteAPIResponse(exactIn(data, 'EXACT_IN'), false)
+      implicitRoute.recipient = recipient
+      explicitRoute.recipient = recipient
+      const implicit = new TradePlanner([implicitRoute])
+      const explicit = new TradePlanner([explicitRoute])
+      implicit.encode()
+      explicit.encode()
       expect([explicit.commands, explicit.inputs]).toEqual([implicit.commands, implicit.inputs])
     }
   })

@@ -17,36 +17,31 @@ export enum RouteType {
 
 export type TradeType = 'EXACT_IN' | 'EXACT_OUT'
 
-export interface ExactOutAmounts {
-  maximumAmountIn: bigint
-  /** Net output target after referral fees; use for Exact-Out display and validation. */
-  amountOut: bigint
-  grossAmountOut: bigint
-  /** Retained for quote validation; Exact-Out requires 0n. */
-  inputReferral: bigint
-  outputReferral: bigint
-  /** Retained for quote validation; Exact-Out requires 0. */
-  inputReferralBips: number
-  outputReferralBips: number
-  stepAmountsIn: bigint[]
-  stepAmountsOut: bigint[]
-}
-
-export interface SwapTradeRoute {
-  tradeType?: TradeType
-  exactOut?: ExactOutAmounts
+interface BaseSwapTradeRoute {
   pools: Pool[]
   input: Currency
   output: Currency
   amountIn: bigint
-  /** Exact-In minimum. Parsed Exact-Out routes leave this at 0n; use exactOut.amountOut. */
-  minimumAmountOut: bigint
   recipient?: Address
 }
 
-export interface SwapExecutionPlan {
-  tradeType?: TradeType
-  exactOut?: ExactOutAmounts
+export interface ExactInSwapTradeRoute extends BaseSwapTradeRoute {
+  tradeType?: 'EXACT_IN'
+  minimumAmountOut: bigint
+}
+
+export interface ExactOutSwapTradeRoute extends BaseSwapTradeRoute {
+  tradeType: 'EXACT_OUT'
+  maximumAmountIn: bigint
+  /** Net output target after referral fees; use for Exact-Out display and validation. */
+  amountOut: bigint
+  grossAmountOut: bigint
+  outputReferralBips: number
+}
+
+export type SwapTradeRoute = ExactInSwapTradeRoute | ExactOutSwapTradeRoute
+
+interface BaseSwapExecutionPlan {
   path: Currency[]
 
   input: Currency
@@ -55,15 +50,28 @@ export interface SwapExecutionPlan {
 
   amountIn: bigint
 
-  /** Exact-In minimum; Exact-Out encoding uses exactOut.amountOut instead. */
-  minimumAmountOut: bigint
-
   sections: SwapSection[]
 
   recipient?: Address
 
   spiltOptions?: PlanSpiltOptions
 }
+
+export interface ExactInSwapExecutionPlan extends BaseSwapExecutionPlan {
+  tradeType?: 'EXACT_IN'
+  minimumAmountOut: bigint
+}
+
+export interface ExactOutSwapExecutionPlan extends BaseSwapExecutionPlan {
+  tradeType: 'EXACT_OUT'
+  maximumAmountIn: bigint
+  /** Net output target after referral fees; use for Exact-Out display and validation. */
+  amountOut: bigint
+  grossAmountOut: bigint
+  outputReferralBips: number
+}
+
+export type SwapExecutionPlan = ExactInSwapExecutionPlan | ExactOutSwapExecutionPlan
 
 export interface SwapExecutionContext {
   plans: SwapExecutionPlan[]

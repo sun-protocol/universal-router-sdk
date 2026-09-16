@@ -6,22 +6,11 @@ export interface PoolKey {
   parameters: string
 }
 
-export interface RouteData {
-  tradeType?: 'EXACT_IN' | 'EXACT_OUT'
-  amountInMaximumRaw?: string
-  /** Exact-Out requires "0"; nonzero input referral amounts are rejected. */
-  amountInRawReferral?: string
-  amountOutRawReferral?: string
-  stepAmountsInRaw?: string[]
-  stepAmountsOutRaw?: string[]
+interface BaseRouteData {
   amountIn: string
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
-  /** Exact-In display minimum; may be absent or empty for Exact-Out. */
-  amountOutMinimum?: string
-  /** Exact-In raw minimum; Exact-Out uses amountOutRaw as its net target. */
-  amountOutMinimumRaw?: string
   inUsd: string
   outUsd: string
   impact: string
@@ -33,10 +22,26 @@ export interface RouteData {
   poolVersions: string[]
   poolKeys: (PoolKey | null)[]
   stepAmountsOut: string[]
-  /** Exact-Out requires zero or omitted; Exact-In also supports input referral. */
   amountInReferralBips?: number
   amountOutReferralBips?: number
 }
+
+/** Exact-In quote. QS may omit tradeType for this response shape. */
+export interface ExactInRouteData extends BaseRouteData {
+  tradeType?: 'EXACT_IN'
+  amountOutMinimum: string
+  amountOutMinimumRaw: string
+}
+
+/** Exact-Out quote. */
+export interface ExactOutRouteData extends BaseRouteData {
+  tradeType: 'EXACT_OUT'
+  amountInMaximum: string
+  amountInMaximumRaw: string
+  grossAmountOutRaw: string
+}
+
+export type RouteData = ExactInRouteData | ExactOutRouteData
 
 export interface RouterAPIResponse {
   code: number
