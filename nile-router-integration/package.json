@@ -1,0 +1,23 @@
+{
+  "name": "nile-router-integration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone QS-response to SDK to Nile Universal Router integration harness",
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "preflight": "node src/preflight.cjs",
+    "probe": "node src/probe-pools.cjs",
+    "list": "node src/cli.cjs list",
+    "encode": "node src/cli.cjs encode",
+    "approve": "node src/cli.cjs prepare",
+    "simulate": "node src/cli.cjs simulate",
+    "execute": "node src/cli.cjs execute"
+  },
+  "dependencies": {
+    "@sun-protocol/universal-router-sdk": "file:..",
+    "tronweb": "^6.0.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -42,7 +42,56 @@ console.log(planner.commands) // Hex-encoded command bytes
 console.log(planner.inputs)   // Hex-encoded input array
 ```
 
-## Supported Pool Types
+## Native Exact-Out
+
+Pass one `EXACT_OUT` quote with `grossAmountOutRaw` from QS. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input and gross output; do not pass a slippage override or split options. The SDK does not read QS per-hop raw amount fields.
+
+Exact-Out supports no referral fee or **output referral fees only**. Request QS quotes with zero input referral bips. Quotes with nonzero `amountInReferralBips` and SDK options with `mode: 'input'` (even at zero bps) are rejected. Exact-In retains both referral modes. The SDK does not read QS's raw referral amount fields; the Router calculates the output fee from its balance and the quoted bips.
+
+QS's trailing `poolFees` display entry is ignored. Like Exact-In, Exact-Out treats the network-specific TRX/WTRX pair as wrapping or unwrapping, including when labelled `v2`, `v3`, or `v4`. The SDK does not read per-hop execution mode fields; Exact-Out still validates the supported pool versions and wrap/unwrap boundaries.
+
+For Exact-Out, display and validate the net output target using `route.amountOut`. The `SwapTradeRoute` and `RouteData` unions expose minimum-output fields only after narrowing to Exact-In.
+
+```typescript
+const route = parseRouteAPIResponse(quote, false)
+route.recipient = new Address(recipientAddress) // optional; defaults to the sender
+const planner = new TradePlanner([route], false, {
+  // Required for a quote with a nonzero output fee; use mode: 'output' and matching bps.
+  referralOptions,
+})
+planner.encode()
+
+// TronWeb callValue is in SUN. Guard conversion if the client requires a number.
+if (planner.callValue > BigInt(Number.MAX_SAFE_INTEGER)) {
+  throw new Error('callValue exceeds the client safe integer range')
+}
+await router.execute(planner.commands, planner.inputs, deadline).send({
+  callValue: Number(planner.callValue),
+})
+```
+
+Import `Address`, `TradePlanner`, and `parseRouteAPIResponse` from this package. For ERC20 input, approve Permit2 on the token and give the Router a Permit2 allowance. Covering `route.maximumAmountIn` allows execution throughout the quoted budget; ordinary user-paid swaps only pull the actual required input. V4 settles its actual debt after swapping. Output referral fees are charged after the swap (and any output unwrap), followed by a SWEEP that checks the net output target.
+
+For TRX input, `callValue` is the maximum total input, all available for the swap; no input referral is charged. Unused TRX is refunded (unused WTRX from an entry wrap is unwrapped first). **The configured recipient receives both output and refunds**, including when it differs from the payer. Create a fresh planner and call `encode()` once per transaction; repeated calls append commands.
+
+| Exact-Out route | Encoding support |
+| --- | --- |
+| V1 | TRX→Token, Token→TRX, Token→Token (internal TRX bridge); controlled exchange execution tests |
+| V2 | Single protocol, single or multiple distinct pools; validated through actual Router commands and payments with controlled pool accounting |
+| V3 | Single protocol, single or multiple distinct pools; controlled pools validate callback payment |
+| V4 | Single or multiple pools through the Router's fixed Manager; actual-debt settlement, empty hookData |
+| PSM | Registered `usdt20psm` pool selected by Router flag, both directions, with `10^12` granularity checks |
+| Wrap / unwrap | Pure TRX ↔ WTRX, or entry/exit wrapping around a supported swap |
+| Same-currency routes | User-paid V2/V3 routes through distinct pools; V4 net-delta loops and prepaid output/refund collisions are rejected |
+| Mixed protocols, splits, Stable, HTX Sun | Rejected for Exact-Out |
+
+Historical Router balances retain Exact-In semantics: SWEEP checks/distributes the total balance and PAY_REFERRAL charges on it. This is distinct from this transaction's refund, which must not satisfy its output minimum or enter its output referral base. Quotes must match the Router deployment. Hook-specific behavior and live deployment state still require execution validation.
+
+V4 Exact-Out sends empty `hookData` (`0x`). Legacy Exact-In sends 20 zero bytes (`zeroAddress`); hooks may distinguish these payloads. Dynamic-fee PoolKey encoding is unit-tested, but the local V4 execution fixtures use static fees. V2 tests verify pool receipts and input/output accounting across Router payments, refunds and referrals; the controlled pools do not enforce the production pool's invariant or update reserves.
+
+A runnable encoding example is in [examples/exact-out/encode.cjs](examples/exact-out/encode.cjs).
+
+## Supported Exact-In Pool Types
 
 | Pool Type | Command | Description |
 |-----------|---------|-------------|
@@ -91,6 +140,8 @@ const planner = new TradePlanner([route], false, {
 ```
 
 ### `parseRouteAPIResponse`
+
+For parsed Exact-Out routes, use `route.amountOut` for the net output target. `minimumAmountOut` exists only on Exact-In routes.
 
 Converts a route from the Sun Router API into a `SwapTradeRoute` that `TradePlanner` can consume.
 
@@ -159,3 +210,22 @@ npm run test         # Run tests
 ## License
 
 MIT
+
+### V1 Exact-Out contract compatibility
+
+V1 Exact-Out requires the Router implementation at `4fbc87557dcddbe3031409ab65561035eb292ac6`
+(or a compatible deployment). SDK support alone does not establish deployment support.
+The local QS currently disables V1 Exact-Out; it must separately enable compatible quotes.
+
+The SDK accepts two endpoints or an explicit Token→TRX→Token route and encodes
+`V1_SWAP_EXACT_OUT(recipient=Router, grossAmountOut, maximumAmountIn, [input, output], payerIsUser)`.
+Other intermediates, longer paths, repeated pools and output/refund currency collisions
+are rejected. The contract performs the Token→Token TRX bridge internally.
+TRX/WTRX pairs retain wrapping semantics.
+
+Native input sends the maximum budget as callValue. ERC20 input is pulled into the
+Router using Permit2 for the on-chain computed requirement; any unconsumed input is
+swept to recipient after output distribution. Output referral is charged before the
+net-target SWEEP, followed by an input refund SWEEP with minimum zero. Input referral
+remains unsupported. V1 evidence uses actual Router/Permit2 with controlled exchanges
+that transfer actual input and output, not deployed production pools.
