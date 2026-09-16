@@ -375,7 +375,7 @@ planner.encode()
 ```
 
 - QS 请求与 SDK 配置的 mode/bps 必须一致。当前 SDK 不允许对有佣金报价省略配置，也不允许任意改变费率。
-- 净输出展示读取 `route.exactOut.amountOut`；当前 Exact-Out 的旧字段 `minimumAmountOut` 为 0n，不用于该模式。
+- 净输出展示读取 `route.amountOut`；`minimumAmountOut` 只存在于 Exact-In 路由。
 - ERC20 输入佣金模式提示需要覆盖最大预算的余额及授权；输出佣金模式按实际需要付款，但授权通常可覆盖最大预算。
 - 明确展示佣金币种、基数、预计费用、净输出目标、最大总输入及退款收款地址。
 - 成交后读取实际转账及 Vault 分账事件核对费用，不直接把 QS 预估金额当成交金额。`ReferralAllocated` 的项目份额与协议份额应合并理解为本次分账总额。

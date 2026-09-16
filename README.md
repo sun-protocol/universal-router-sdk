@@ -44,13 +44,13 @@ console.log(planner.inputs)   // Hex-encoded input array
 
 ## Native Exact-Out
 
-Pass one `EXACT_OUT` quote from QS commit `9c1c3e5` or later. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input; do not pass a slippage override or split options.
+Pass one `EXACT_OUT` quote with `grossAmountOutRaw` from QS. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input and gross output; do not pass a slippage override or split options. The SDK does not read QS per-hop raw amount fields.
 
-Exact-Out supports no referral fee or **output referral fees only**. Request QS quotes with zero input referral: `amountInRawReferral` must be `"0"`, and `amountInReferralBips` must be zero or omitted. Quotes with input referral amounts/rates and SDK options with `mode: 'input'` (even at zero bps) are rejected. Exact-In retains both referral modes.
+Exact-Out supports no referral fee or **output referral fees only**. Request QS quotes with zero input referral bips. Quotes with nonzero `amountInReferralBips` and SDK options with `mode: 'input'` (even at zero bps) are rejected. Exact-In retains both referral modes. The SDK does not read QS's raw referral amount fields; the Router calculates the output fee from its balance and the quoted bips.
 
 QS's trailing `poolFees` display entry is ignored. Like Exact-In, Exact-Out treats the network-specific TRX/WTRX pair as wrapping or unwrapping, including when labelled `v2`, `v3`, or `v4`. The SDK does not read per-hop execution mode fields; Exact-Out still validates the supported pool versions and wrap/unwrap boundaries.
 
-For Exact-Out, display and validate the net output target using `route.exactOut.amountOut`. Parsed Exact-Out routes leave the legacy `route.minimumAmountOut` at `0n`; this field is only used for Exact-In. `RouteData.amountOutMinimum` and `amountOutMinimumRaw` are now optional because Exact-Out responses may omit them. TypeScript consumers reading these API fields must handle `undefined`.
+For Exact-Out, display and validate the net output target using `route.amountOut`. The `SwapTradeRoute` and `RouteData` unions expose minimum-output fields only after narrowing to Exact-In.
 
 ```typescript
 const route = parseRouteAPIResponse(quote, false)
@@ -70,7 +70,7 @@ await router.execute(planner.commands, planner.inputs, deadline).send({
 })
 ```
 
-Import `Address`, `TradePlanner`, and `parseRouteAPIResponse` from this package. For ERC20 input, approve Permit2 on the token and give the Router a Permit2 allowance. Covering `exactOut.maximumAmountIn` allows execution throughout the quoted budget; ordinary user-paid swaps only pull the actual required input. V4 settles its actual debt after swapping. Output referral fees are charged after the swap (and any output unwrap), followed by a SWEEP that checks the net output target.
+Import `Address`, `TradePlanner`, and `parseRouteAPIResponse` from this package. For ERC20 input, approve Permit2 on the token and give the Router a Permit2 allowance. Covering `route.maximumAmountIn` allows execution throughout the quoted budget; ordinary user-paid swaps only pull the actual required input. V4 settles its actual debt after swapping. Output referral fees are charged after the swap (and any output unwrap), followed by a SWEEP that checks the net output target.
 
 For TRX input, `callValue` is the maximum total input, all available for the swap; no input referral is charged. Unused TRX is refunded (unused WTRX from an entry wrap is unwrapped first). **The configured recipient receives both output and refunds**, including when it differs from the payer. Create a fresh planner and call `encode()` once per transaction; repeated calls append commands.
 
@@ -141,7 +141,7 @@ const planner = new TradePlanner([route], false, {
 
 ### `parseRouteAPIResponse`
 
-For parsed Exact-Out routes, use `route.exactOut.amountOut` for the net output target; `route.minimumAmountOut` remains `0n`. Exact-In continues to use `route.minimumAmountOut`.
+For parsed Exact-Out routes, use `route.amountOut` for the net output target. `minimumAmountOut` exists only on Exact-In routes.
 
 Converts a route from the Sun Router API into a `SwapTradeRoute` that `TradePlanner` can consume.
 

@@ -10,8 +10,7 @@ const quote = JSON.parse(fs.readFileSync(file, 'utf8'))
 if (quote.tradeType !== 'EXACT_OUT') throw new Error('Expected one EXACT_OUT quote')
 const route = parseRouteAPIResponse(quote, false)
 if (recipient) route.recipient = new Address(recipient)
-const details = route.exactOut
-const bps = details.outputReferralBips
+const bps = route.outputReferralBips
 if (bps && !projectAddress) throw new Error('Provide the referral project from the quote request')
 const planner = new TradePlanner([route], false, {
   referralOptions: bps ? { mode: 'output', bps, projectAddress } : undefined,
@@ -24,5 +23,5 @@ console.log(JSON.stringify({
   callValue: Number(planner.callValue),
   // Before execution: approve Permit2 on the input token and give the Router
   // a Permit2 allowance. TRX uses callValue and needs no token approval.
-  permit2Budget: route.input.isNative ? '0' : details.maximumAmountIn.toString(),
+  permit2Budget: route.input.isNative ? '0' : route.maximumAmountIn.toString(),
 }, null, 2))

@@ -28,11 +28,9 @@ const route = parseRouteAPIResponse({
     hooks: '0x0000000000000000000000000000000000000000', fee: Number(v4Fees[i]), parameters,
   })),
   amountInRaw: routingInput, amountOutRaw: target,
-  amountInMaximumRaw: maximum, amountInRawReferral: '0',
-  amountOutRawReferral: (gross * BigInt(outputBips) / 10000n).toString(),
+  amountInMaximumRaw: maximum,
   amountInReferralBips: Number(inputBips), amountOutReferralBips: Number(outputBips),
-  stepAmountsInRaw: [routingInput, ...Array(n - 1).fill(gross.toString())],
-  stepAmountsOutRaw: Array(n).fill(gross.toString()),
+  grossAmountOutRaw: gross.toString(),
 }, false)
 route.recipient = new Address(recipient)
 const referralOptions = Number(outputBips) ? { mode: 'output', bps: Number(outputBips), projectAddress: recipient } : undefined
