@@ -37,8 +37,9 @@ async function main() {
     encoding: {
       commands: encoded.planner.commands,
       inputs: encoded.planner.inputs,
-      callValue: encoded.planner.callValue,
+      callValue: encoded.callValue ?? encoded.planner.callValue,
       recipient: encoded.recipient,
+      referralRecipient: encoded.referralRecipient,
     },
   }
   if (command === 'encode') {
@@ -68,7 +69,8 @@ async function main() {
   if (execution.assertionFailure) throw new Error(`Post-execution assertion failed: ${execution.assertionFailure}`)
 }
 
+const keepAlive = setInterval(() => console.log('WAIT rpc'), 10_000)
 main().catch(error => {
   console.error(error instanceof Error ? error.message : error)
   process.exitCode = 1
-})
+}).finally(() => clearInterval(keepAlive))

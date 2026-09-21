@@ -13,6 +13,7 @@ function loadSdk() {
 async function encodeScenario(scenario, env) {
   const sdk = loadSdk()
   const quote = await scenario.buildQuote(env)
+  if (scenario.encode) return { quote, ...await scenario.encode({ sdk, quote, env }) }
   const route = sdk.parseRouteAPIResponse(quote, true)
   const recipient = scenario.recipient(env)
   if (!recipient) throw new Error(`Scenario ${scenario.id ?? '<unnamed>'} requires a recipient`)
@@ -26,7 +27,8 @@ async function encodeScenario(scenario, env) {
     : undefined
   const planner = new sdk.TradePlanner([route], false, { referralOptions })
   planner.encode()
-  return { quote, route, planner, recipient }
+  const callValue = scenario.callValue ? BigInt(await scenario.callValue({ quote, route, env })) : planner.callValue
+  return { quote, route, planner, callValue, recipient, referralRecipient }
 }
 
 module.exports = { loadSdk, encodeScenario }

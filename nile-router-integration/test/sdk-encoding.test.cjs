@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const { buildExactOutQuote } = require('../src/qs-exact-out.cjs')
 const { encodeScenario } = require('../src/sdk.cjs')
 const nile = require('../config/nile.json')
+const { buildExactInQuote } = require('../src/qs-exact-in.cjs')
 
 test('passes a constructed QS response through the SDK boundary', async () => {
   const scenario = {
@@ -58,4 +59,28 @@ test('encodes the registered Nile PSM Exact-Out pair without a mainnet address d
   }
   const encoded = await encodeScenario(scenario, {})
   assert.match(encoded.planner.commands, /^0x25/)
+})
+
+test('passes Exact-In native callValue through the standalone scenario boundary', async () => {
+  const amountIn = 123n
+  const scenario = {
+    recipient: () => '0x4000000000000000000000000000000000000000',
+    callValue: () => amountIn,
+    buildQuote: () => buildExactInQuote({
+      tokens: ['0x0000000000000000000000000000000000000000',
+        '0x2000000000000000000000000000000000000000'],
+      poolVersions: ['v1'], poolFees: ['0'], amountInRaw: amountIn,
+      amountOutRaw: 100n, amountOutMinimumRaw: 99n,
+    }),
+  }
+  const encoded = await encodeScenario(scenario, {})
+  assert.match(encoded.planner.commands, /^0x10/)
+  assert.equal(encoded.callValue, amountIn)
+})
+
+test('direct PSM rounding scenario encodes swap and sweep without relaxing SDK validation', async () => {
+  const scenario = require('../scenarios/psm-usdtnew-usdd-round-up.cjs')
+  const encoded = await encodeScenario(scenario, { NILE_RECIPIENT: '0x4000000000000000000000000000000000000000' })
+  assert.equal(encoded.planner.commands, '0x2504')
+  assert.equal(encoded.callValue, 0n)
 })

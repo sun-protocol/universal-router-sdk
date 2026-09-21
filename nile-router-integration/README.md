@@ -6,10 +6,10 @@ passes it to `parseRouteAPIResponse`, encodes Router calldata, and can optionall
 broadcast the transaction to Nile.
 
 The public deployment configuration is in `config/nile.json`. The configured
-Universal Router is `TM8zZWPHSwApPYiMvaRPkR1QSMFnqu2pQ2`; the same file contains
-Permit2, WTRX, protocol factories, V4 contracts, SafeVault, deployment transaction,
-block number and matching Router source commit. These values come from the local
-`sunswap-universal-router/config/nile-router.json` and deployment verification record.
+Universal Router is `TPpiiS3FiDxBMRzyhfaQDokxqybchY3vNz`; the same file contains
+Permit2, WTRX, protocol factories, V4 contracts and SafeVault. Deployment transaction,
+block number and matching source commit remain unset until the new deployment record
+is available.
 Environment variables can override Router and RPC when testing a later deployment.
 
 ## Safety boundary
@@ -38,6 +38,8 @@ npm run encode -- v4-trx-usddold-usdt
 NILE_SEND=true npm run approve -- v2-usdt-usddold
 NILE_ENV_FILE=/path/to/router/.env NILE_RECIPIENT=<address> npm run simulate -- v1-trx-usdt
 NILE_SEND=true npm run execute -- v2-usdt-usddold
+NILE_SEND=true npm run regression:mr8
+NILE_SEND=true npm run regression:mr8 -- v1-exact-in-trx-usdt psm-usdtnew-usdd-round-up
 ```
 
 To reuse the ignored deployment environment without copying its private key, run:
@@ -96,21 +98,37 @@ math and transaction behavior belong in `src/`, so new protocol cases remain sma
 Every successful broadcast writes its quote, exact SDK calldata, callValue, receipt,
 and transaction ID to `reports/`.
 
+The MR 8 regression design and its division between Forge-only and live Nile
+coverage is in [`docs/mr8-system-test-plan.md`](docs/mr8-system-test-plan.md).
+`regression:mr8` can run the full matrix or a space-separated subset of scenario IDs.
+
 ## Current scope
 
-The harness covers V1, V2, V3, and V4 Exact-Out with native and ERC20 payment,
+The harness covers V1 and PSM Exact-In, V1, V2, V3, V4 and PSM Exact-Out with native and ERC20 payment,
 native and ERC20 output, TRX/WTRX wrap and unwrap, maximum-input rejection, output
 referral encoding, Permit2 preparation, recipient delivery, and Router balance
 cleanup. V2, V3, and V4 include live same-protocol two-pool routes whose QS-shaped
-step amounts come from reverse per-hop quotes. The configured Nile Router currently reports a zero `referralVault`, so
-all output-referral scenarios are expected simulation failures until the deployment
-is configured.
+step amounts come from reverse per-hop quotes. The configured Nile Router is
+`TPpiiS3FiDxBMRzyhfaQDokxqybchY3vNz`. Its on-chain `referralVault()` is
+`TLpUjeu6oJZsUyxW8N3FnRtqxb4yVxMaLd`, so output-referral scenarios can execute
+against this deployment.
+
+The MR 8 suite adds V1 native/token/token-to-token paths in both trade directions,
+PSM Exact-In in both directions, PSM non-divisible Exact-Out rounding, V3 Exact-In,
+and a full new-Router rerun of V2/V3/V4 and wrapping custody paths. Contract-only
+rounding is encoded directly as Router commands inside this standalone directory;
+the SDK source is not relaxed to manufacture a QS response it currently rejects.
 
 Nile does have a registered `usdt20psm` pool at flag `0x10010`: USDD v2.0
 `TZ78...` / USDT New `TZDn...`, PSM `TPj6...`, relative-decimals `10^12`, with
 `tin=tout=0` at the latest probe. The two PSM scenario files construct both
 Exact-Out directions and include Permit2 and balance assertions. The SDK validates
 the PSM flag and `10^12` amount relationship, while the Router's StableFactory is
-the authority for whether the concrete token pair is registered.
+the authority for whether the concrete token pair is registered. The prior Router
+failed USDD→USDT New during its final sweep because USDT New returns `false` from
+`transfer`. Both PSM directions now pass state-changing execution against the new
+Router, including USDD→USDT New's final output sweep. The payer spent exactly
+`0.1 USDD` / `0.1 USDT New`, received exactly `0.1 USDT New` / `0.1 USDD`, and
+the Router retained neither token.
 
 The verified transaction and expected-failure matrix is in `reports/README.md`.

@@ -3,11 +3,11 @@ const nile = require('../config/nile.json')
 const { buildExactOutQuote, grossTarget } = require('../src/qs-exact-out.cjs')
 const { quoteV2ExactOut } = require('../src/nile-v2.cjs')
 const { trxBalance, tokenBalance } = require('../src/balances.cjs')
+const { withOutputReferralAssertions } = require('../src/referral-assertions.cjs')
 
-module.exports = {
+module.exports = withOutputReferralAssertions({
   id: 'v2-trx-usdt-output-fee',
   description: 'Live Nile V2 TRX→WTRX→USDT Exact-Out with 1% output referral',
-  expectedSimulationFailure: 'Nile Router referralVault is currently unset (zero address)',
   recipient: env => env.NILE_RECIPIENT,
   referralRecipient: env => env.NILE_REFERRAL_RECIPIENT || env.NILE_RECIPIENT,
   async buildQuote() {
@@ -41,4 +41,4 @@ module.exports = {
       outputReferralRaw: encoded.quote.amountOutRawReferral,
       routerOutputBalanceUnchanged: true, routerTrxBalanceUnchanged: true }
   },
-}
+}, nile.tokens.usdt)
