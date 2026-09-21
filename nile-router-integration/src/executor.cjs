@@ -17,6 +17,10 @@ function executeParameters(encoded) {
   ]
 }
 
+function callValue(encoded) {
+  return BigInt(encoded.callValue ?? encoded.planner.callValue ?? 0)
+}
+
 async function simulateOnNile(encoded) {
   const tronWeb = client()
   const router = process.env.NILE_ROUTER_ADDRESS || nile.universalRouter
@@ -24,7 +28,7 @@ async function simulateOnNile(encoded) {
   try {
     result = await tronWeb.transactionBuilder.triggerConstantContract(
       router, 'execute(bytes,bytes[],uint256)', {
-        callValue: Number(encoded.planner.callValue),
+        callValue: Number(callValue(encoded)),
         feeLimit: Number(encoded.scenario.feeLimit ?? 500_000_000),
       }, executeParameters(encoded), tronWeb.defaultAddress.base58)
   } catch (error) {
@@ -53,12 +57,12 @@ async function executeOnNile(encoded) {
   }
   const router = process.env.NILE_ROUTER_ADDRESS || nile.universalRouter
   const tronWeb = client()
-  if (encoded.planner.callValue > BigInt(Number.MAX_SAFE_INTEGER)) {
+  if (callValue(encoded) > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error('callValue exceeds TronWeb safe integer range')
   }
-  if (encoded.scenario.beforeExecute) await encoded.scenario.beforeExecute({ tronWeb, encoded })
+  if (encoded.scenario.beforeExecute) await encoded.scenario.beforeExecute({ tronWeb, encoded, router })
   const built = await tronWeb.transactionBuilder.triggerSmartContract(router, 'execute(bytes,bytes[],uint256)', {
-    callValue: Number(encoded.planner.callValue),
+    callValue: Number(callValue(encoded)),
     feeLimit: Number(encoded.scenario.feeLimit ?? 500_000_000),
   }, executeParameters(encoded))
   if (!built.result?.result) throw new Error(`Router trigger failed: ${built.result?.message ?? 'unknown error'}`)
@@ -68,7 +72,9 @@ async function executeOnNile(encoded) {
   const receipt = await waitForReceipt(tronWeb, broadcast.txid)
   let assertionFailure
   try {
-    if (encoded.scenario.afterExecute) await encoded.scenario.afterExecute({ tronWeb, encoded, receipt })
+    if (encoded.scenario.afterExecute) {
+      await encoded.scenario.afterExecute({ tronWeb, encoded, receipt, router })
+    }
   } catch (error) {
     assertionFailure = error instanceof Error ? error.message : String(error)
   }

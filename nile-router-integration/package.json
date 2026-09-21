@@ -11,7 +11,8 @@
     "encode": "node src/cli.cjs encode",
     "approve": "node src/cli.cjs prepare",
     "simulate": "node src/cli.cjs simulate",
-    "execute": "node src/cli.cjs execute"
+    "execute": "node src/cli.cjs execute",
+    "regression:mr8": "node src/regression.cjs"
   },
   "dependencies": {
     "@sun-protocol/universal-router-sdk": "file:..",

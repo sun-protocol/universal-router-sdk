@@ -2,12 +2,12 @@ const base = require('./v4-trx-usdt.cjs')
 const nile = require('../config/nile.json')
 const { buildExactOutQuote, grossTarget } = require('../src/qs-exact-out.cjs')
 const { quoteV4ExactOut } = require('../src/nile-v4.cjs')
+const { withOutputReferralAssertions } = require('../src/referral-assertions.cjs')
 
-module.exports = {
+module.exports = withOutputReferralAssertions({
   ...base,
   id: 'v4-trx-usdt-output-fee',
   description: 'Nile V4 native TRX→USDT Exact-Out with 1% output referral',
-  expectedSimulationFailure: 'Nile Router referralVault is currently unset (zero address)',
   referralRecipient: env => env.NILE_REFERRAL_RECIPIENT || env.NILE_RECIPIENT,
   async buildQuote() {
     const net = 100_000n, bips = 100, gross = grossTarget(net, bips)
@@ -26,4 +26,4 @@ module.exports = {
       amountInMaximumRaw: quote.amountIn + quote.amountIn / 100n,
     })
   },
-}
+}, nile.tokens.usdt)

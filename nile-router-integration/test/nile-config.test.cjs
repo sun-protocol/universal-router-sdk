@@ -15,8 +15,9 @@ test('all configured Nile contract addresses have valid Base58 checksums', () =>
   validate(nile, 'nile')
 })
 
-test('deployment metadata matches the V1 Exact-Out Router source baseline', () => {
-  assert.equal(nile.universalRouter, 'TM8zZWPHSwApPYiMvaRPkR1QSMFnqu2pQ2')
-  assert.equal(nile.routerSourceCommit, '4fbc87557dcddbe3031409ab65561035eb292ac6')
-  assert.match(nile.deploymentTxId, /^[0-9a-f]{64}$/)
+test('deployment metadata matches the current Exact-Out Router deployment', () => {
+  assert.equal(nile.universalRouter, 'TPpiiS3FiDxBMRzyhfaQDokxqybchY3vNz')
+  assert.equal(nile.routerSourceCommit, null)
+  assert.equal(nile.deploymentTxId, null)
+  assert.equal(nile.deploymentBlock, null)
 })

@@ -1,7 +1,7 @@
 {
   "chainId": "0xcd8690dc",
   "fullNode": "https://nile.trongrid.io",
-  "universalRouter": "TM8zZWPHSwApPYiMvaRPkR1QSMFnqu2pQ2",
+  "universalRouter": "TPpiiS3FiDxBMRzyhfaQDokxqybchY3vNz",
   "permit2": "TYQuuhGbEMxF7nZxUHV3uHJxAVVAegNU9h",
   "wtrx": "TYsbWxNnyTgsZaTFaue9hqpxkU3Fkco94a",
   "v1Factory": "TXFouUxm4Qs3c1VxfQtCo4xMxbpwE3aWDM",
@@ -85,7 +85,7 @@
     "usdd": "TZ78R2E6ejfFhxq8hxrmuqT6hGBxjHQbo4",
     "usdc": "TWMCMCoJPqCGw5RR7eChF2HoY3a9B8eYA3"
   },
-  "deploymentTxId": "9966f84e4ee7b76bc700f0687295be95e5663c4dcad34f2d85ad819c01f1187c",
-  "deploymentBlock": 70950360,
-  "routerSourceCommit": "4fbc87557dcddbe3031409ab65561035eb292ac6"
+  "deploymentTxId": null,
+  "deploymentBlock": null,
+  "routerSourceCommit": null
 }

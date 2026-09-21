@@ -1,5 +1,6 @@
 const { TronWeb } = require('tronweb')
 const { waitForReceipt } = require('./executor.cjs')
+const { withTimeout } = require('./balances.cjs')
 const nile = require('../config/nile.json')
 
 const tokenAbi = [
@@ -28,7 +29,7 @@ function client(env) {
 }
 
 async function sendAndWait(tronWeb, method, feeLimit = 100_000_000) {
-  const txid = await method.send({ feeLimit })
+  const txid = await withTimeout(method.send({ feeLimit }), 'Approval broadcast', 30_000)
   const receipt = await waitForReceipt(tronWeb, txid)
   return { txid, receipt }
 }
@@ -45,13 +46,15 @@ async function preparePermit2(env, tokenAddress, requiredAmount) {
   const required = BigInt(requiredAmount)
   const approvals = []
 
-  const tokenAllowance = BigInt((await token.allowance(owner, nile.permit2).call()).toString())
+  const tokenAllowance = BigInt((await withTimeout(
+    token.allowance(owner, nile.permit2).call(), `ERC20 allowance ${tokenAddress}`)).toString())
   if (tokenAllowance < required) {
     approvals.push({ layer: 'ERC20→Permit2', ...await sendAndWait(
       tronWeb, token.approve(nile.permit2, required.toString())) })
   }
 
-  const packed = await permit2.allowance(owner, tokenAddress, router).call()
+  const packed = await withTimeout(
+    permit2.allowance(owner, tokenAddress, router).call(), `Permit2 allowance ${tokenAddress}`)
   const amount = BigInt((packed.amount ?? packed[0]).toString())
   const expiration = BigInt((packed.expiration ?? packed[1]).toString())
   const minimumExpiry = BigInt(Math.floor(Date.now() / 1000) + 600)
