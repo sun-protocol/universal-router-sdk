@@ -1,0 +1,590 @@
+[
+  {
+    "name": "v1",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v1"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x2c2804ec131ebaeef076b09b819f308190d5c9dd83ea8a9eecd148e97c3767e1"
+  },
+  {
+    "name": "v2",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v2"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0xe9dcf4877d4b52ec182c30f5b35000435e4298e1412839ecca487ace643fec7e"
+  },
+  {
+    "name": "v3",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v3"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0xb2cfba45cd12101d1b430e2f70b6cc06315a57dec20139f425da0ab28f9912af"
+  },
+  {
+    "name": "v4",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v4"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        {
+          "token0": "0x1000000000000000000000000000000000000000",
+          "token1": "0x2000000000000000000000000000000000000000",
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "fee": 3000,
+          "parameters": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x28502ad6124a2ef84ec81d94b9adbefa141f3dc99affaa4f05541e9485152c17"
+  },
+  {
+    "name": "usdt20psm",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "usdt20psm"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x9b1ff3d81dfaf206d1c21f9656cb8a5dd16fbe406cf6fd1e89af094efbfb7b41"
+  },
+  {
+    "name": "2pool",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "2pool"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x0b9850c95c32f039bf02b0d728057b80bed0d52bd723eb40700f0dcd2e7bf82e"
+  },
+  {
+    "name": "htxsun",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "htxsun"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x34630ccd49adc1c812bf9e8f78faab4c777e27b172a298dbb77dd7ca7b4d32be"
+  },
+  {
+    "name": "v1-full",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v1",
+        "v1"
+      ],
+      "poolFees": [
+        "3000",
+        "3000"
+      ],
+      "poolKeys": [
+        null,
+        null
+      ],
+      "stepAmountsOut": [
+        "50",
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x2c2804ec131ebaeef076b09b819f308190d5c9dd83ea8a9eecd148e97c3767e1"
+  },
+  {
+    "name": "native-v4",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x0000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v4"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        {
+          "token0": "0x0000000000000000000000000000000000000000",
+          "token1": "0x2000000000000000000000000000000000000000",
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "fee": 3000,
+          "parameters": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x2bd7f576c6776fee28ffc4fbcbe3751b52bf390852943fa4a1ebccb061c54817"
+  },
+  {
+    "name": "wrap-v2",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x0000000000000000000000000000000000000000",
+        "0x891cdb91d149f23b1a45d9c5ca78a88d0cb44c18",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "wtrx",
+        "v2"
+      ],
+      "poolFees": [
+        "3000",
+        "3000"
+      ],
+      "poolKeys": [
+        null,
+        null
+      ],
+      "stepAmountsOut": [
+        "50",
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x577d794c65d83a2c0b57a7621f0106105e1e982a05acad502369c9ba5f708c41"
+  },
+  {
+    "name": "unwrap-v3",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x891cdb91d149f23b1a45d9c5ca78a88d0cb44c18",
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v3",
+        "wtrx"
+      ],
+      "poolFees": [
+        "3000",
+        "3000"
+      ],
+      "poolKeys": [
+        null,
+        null
+      ],
+      "stepAmountsOut": [
+        "50",
+        "50"
+      ]
+    },
+    "split": false,
+    "hash": "0x12b2b6574b1a5729ff9ffaa4bcbff134c1a89788b553551b1dee5e13333b6cb0"
+  },
+  {
+    "name": "input-referral",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v2"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "options": {
+      "referralOptions": {
+        "mode": "input",
+        "bps": 100,
+        "projectAddress": "0x2000000000000000000000000000000000000000"
+      }
+    },
+    "split": false,
+    "hash": "0x22c399dc3825d9ce9b130ba2002cf7a1781c6981c9fd2872a1fd8b2cd3187bc4"
+  },
+  {
+    "name": "output-referral",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v4"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        {
+          "token0": "0x1000000000000000000000000000000000000000",
+          "token1": "0x2000000000000000000000000000000000000000",
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "fee": 3000,
+          "parameters": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "options": {
+      "referralOptions": {
+        "mode": "output",
+        "bps": 100,
+        "projectAddress": "0x2000000000000000000000000000000000000000"
+      }
+    },
+    "split": false,
+    "hash": "0x0800e3f3a3329ff403c35dd29abbea8b1d9cc4771078b25ccad2cc5cd67499c3"
+  },
+  {
+    "name": "split",
+    "data": {
+      "amountIn": "100",
+      "amountInRaw": "100",
+      "amountOut": "50",
+      "amountOutRaw": "50",
+      "amountOutMinimum": "40",
+      "amountOutMinimumRaw": "40",
+      "inUsd": "0",
+      "outUsd": "0",
+      "impact": "0",
+      "fee": "0",
+      "containsUnverifiedHook": false,
+      "tokens": [
+        "0x1000000000000000000000000000000000000000",
+        "0x2000000000000000000000000000000000000000"
+      ],
+      "symbols": [
+        "?",
+        "?"
+      ],
+      "poolVersions": [
+        "v2"
+      ],
+      "poolFees": [
+        "3000"
+      ],
+      "poolKeys": [
+        null
+      ],
+      "stepAmountsOut": [
+        "50"
+      ]
+    },
+    "options": {
+      "tradeSpiltOptions": {
+        "enable": true,
+        "oneShotTransfer": true
+      }
+    },
+    "split": true,
+    "hash": "0x3844c2c5f666a2a3ec6dc046af590dc856077a10f37eb07b2c8d56ca706557f9"
+  }
+]

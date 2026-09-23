@@ -15,16 +15,33 @@ export enum RouteType {
   WTRX,
 }
 
-export interface SwapTradeRoute {
+export type TradeType = 'EXACT_IN' | 'EXACT_OUT'
+
+interface BaseSwapTradeRoute {
   pools: Pool[]
   input: Currency
   output: Currency
   amountIn: bigint
-  minimumAmountOut: bigint
   recipient?: Address
 }
 
-export interface SwapExecutionPlan {
+export interface ExactInSwapTradeRoute extends BaseSwapTradeRoute {
+  tradeType?: 'EXACT_IN'
+  minimumAmountOut: bigint
+}
+
+export interface ExactOutSwapTradeRoute extends BaseSwapTradeRoute {
+  tradeType: 'EXACT_OUT'
+  maximumAmountIn: bigint
+  /** Net output target after referral fees; use for Exact-Out display and validation. */
+  amountOut: bigint
+  grossAmountOut: bigint
+  outputReferralBips: number
+}
+
+export type SwapTradeRoute = ExactInSwapTradeRoute | ExactOutSwapTradeRoute
+
+interface BaseSwapExecutionPlan {
   path: Currency[]
 
   input: Currency
@@ -33,14 +50,28 @@ export interface SwapExecutionPlan {
 
   amountIn: bigint
 
-  minimumAmountOut: bigint
-
   sections: SwapSection[]
 
   recipient?: Address
 
   spiltOptions?: PlanSpiltOptions
 }
+
+export interface ExactInSwapExecutionPlan extends BaseSwapExecutionPlan {
+  tradeType?: 'EXACT_IN'
+  minimumAmountOut: bigint
+}
+
+export interface ExactOutSwapExecutionPlan extends BaseSwapExecutionPlan {
+  tradeType: 'EXACT_OUT'
+  maximumAmountIn: bigint
+  /** Net output target after referral fees; use for Exact-Out display and validation. */
+  amountOut: bigint
+  grossAmountOut: bigint
+  outputReferralBips: number
+}
+
+export type SwapExecutionPlan = ExactInSwapExecutionPlan | ExactOutSwapExecutionPlan
 
 export interface SwapExecutionContext {
   plans: SwapExecutionPlan[]
@@ -93,6 +124,7 @@ export interface PlanSpiltOptions {
   isLastSpilt: boolean
 }
 
+/** Exact-Out accepts only mode: 'output'; both modes remain available for Exact-In. */
 export type ReferralOptions =
   | {
       mode: 'input'
