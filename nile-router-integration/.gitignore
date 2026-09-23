@@ -1,4 +1,0 @@
-.env
-node_modules/
-reports/*.json
-!reports/.gitkeep
