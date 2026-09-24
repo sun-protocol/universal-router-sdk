@@ -159,3 +159,8 @@ npm run test         # Run tests
 ## License
 
 MIT
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the GitLab-first development model,
+GitHub release synchronization, review requirements, and validation guidance.
