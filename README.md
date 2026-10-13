@@ -46,7 +46,7 @@ console.log(planner.inputs)   // Hex-encoded input array
 
 Implementation details, QS fields, protocol commands, output referrals, and refunds are documented in [SDK Exact-Out implementation](docs/exact_out.md).
 
-Pass one `EXACT_OUT` quote with `grossAmountOutRaw` from QS. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input and gross output; do not pass a slippage override or split options. The SDK does not read QS per-hop raw amount fields.
+Pass one `EXACT_OUT` quote with `grossAmountOutRaw` from QS. Omitted `tradeType` still means Exact-In. Exact-Out uses the quoted maximum input by default. Passing `slippageBips` (preferred) or `slippage` overrides it with the estimated input plus tolerance, rounded up; gross output stays unchanged. Split options are not supported. The SDK does not read QS per-hop raw amount fields.
 
 Exact-Out supports no referral fee or **output referral fees only**. Request QS quotes with zero input referral bips. Quotes with nonzero `amountInReferralBips` and SDK options with `mode: 'input'` (even at zero bps) are rejected. Exact-In retains both referral modes. The SDK does not read QS's raw referral amount fields; the Router calculates the output fee from its balance and the quoted bips.
 

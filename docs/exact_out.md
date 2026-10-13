@@ -78,7 +78,7 @@ await router.execute(encoded.commands, encoded.inputs, deadline).send({
 注意：
 
 - `isTestnet` 影响 TRX/WTRX 币对识别，不会自动选择 Router 或校验部署。
-- Exact-Out 拒绝 `slippage`、`slippageBips` 覆盖，即使传入零；最大输入直接使用 QS 报价。
+- Exact-Out 支持 `slippageBips`（优先）或 `slippage` 覆盖，不传时沿用 QS 最大输入。`slippageBips` 为 0–10000 的 bigint，最大输入为 `ceil(amountInRaw × (10000 + slippageBips) / 10000)`。旧 `slippage` 参数为 [0, 1) 的小数，按 Exact-In 规则取整到百万分之一，再向上取整计算预算。零值表示最大输入等于预计输入。前端展示、授权和 TRX callValue 使用解析后的预算，净输出与毛输出不变。
 - 仅接受一条路由；不能启用 `tradeSpiltOptions.enable` 或 `oneShotTransfer`。
 - 在创建 Planner 前设置好路由；每笔交易新建 Planner，调用一次 `encode()`。重复调用会追加命令。
 - Exact-Out 编码失败会恢复本次编码前的 `commands` 和 `inputs`；这不是链上回滚机制。
@@ -91,7 +91,7 @@ await router.execute(encoded.commands, encoded.inputs, deadline).send({
 | QS 字段 | 内部字段 | 用途 |
 | --- | --- | --- |
 | `amountInRaw` | `amountIn` | QS 预计输入，用于预算一致性、PSM 精度检查，以及纯解包的拉款金额；不是一般交换的实际扣款结果 |
-| `amountInMaximumRaw` | `maximumAmountIn` | 最大输入；TRX 输入时也是 `callValue` |
+| `amountInMaximumRaw` | `maximumAmountIn` | 默认最大输入，传滑点时根据预计输入覆盖；TRX 输入时也是 `callValue` |
 | `amountOutRaw` | `amountOut` | 扣佣后的净输出目标，作为最后输出 SWEEP 的最低余额 |
 | `grossAmountOutRaw` | `grossAmountOut` | 交给协议交换命令的毛输出目标 |
 | `amountOutReferralBips` | `outputReferralBips` | 输出收费比例，省略为零 |
