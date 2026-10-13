@@ -118,9 +118,58 @@ describe('Exact-Out parsing and admission', () => {
     expect(() => encode(quote(override))).toThrow()
   })
 
-  it('rejects unknown trade types and slippage overrides', () => {
+  it('rejects unknown trade types', () => {
     expect(() => parseRouteAPIResponse(quote({ tradeType: 'OTHER' as never }), false)).toThrow('tradeType')
-    expect(() => parseRouteAPIResponse(quote(), false, { slippageBips: 0n })).toThrow('slippage')
+  })
+
+  it.each([
+    [undefined, 110n], [{}, 110n],
+    [{ slippageBips: 0n }, 100n], [{ slippage: 0 }, 100n],
+    [{ slippageBips: 50n }, 101n], [{ slippage: 0.005 }, 101n],
+    [{ slippageBips: 10_000n }, 200n],
+    [{ slippageBips: 0n, slippage: 0.5 }, 100n],
+    [{ slippageBips: 50n, slippage: 1 }, 101n],
+  ])('uses the expected maximum input for options %#', (options, expected) => {
+    const data = quote()
+    const route = parseRouteAPIResponse(data, false, options)
+    expect(route.maximumAmountIn).toBe(expected)
+    expect([route.amountIn, route.amountOut, route.grossAmountOut]).toEqual([100n, 50n, 50n])
+    expect(data.amountInMaximumRaw).toBe('110')
+  })
+
+  it.each([
+    { slippageBips: -1n }, { slippageBips: 10_001n },
+    { slippage: -0.001 }, { slippage: 1 }, { slippage: NaN }, { slippage: Infinity },
+  ])('rejects invalid Exact-Out slippage %#', options => {
+    expect(() => parseRouteAPIResponse(quote(), false, options)).toThrow('slippage')
+  })
+
+  it('rounds large input budgets up without number precision loss', () => {
+    const amountIn = 10n ** 30n + 1n
+    const data = quote({ amountInRaw: amountIn.toString(), amountInMaximumRaw: (amountIn * 2n).toString() })
+    for (const options of [{ slippageBips: 50n }, { slippage: 0.005 }]) {
+      expect(parseRouteAPIResponse(data, false, options).maximumAmountIn).toBe(1005n * 10n ** 27n + 2n)
+    }
+    expect(parseRouteAPIResponse(quote({ amountInRaw: '10000', amountInMaximumRaw: '11000' }),
+      false, { slippageBips: 50n }).maximumAmountIn).toBe(10050n)
+  })
+
+  it('validates the overridden budget against command width limits', () => {
+    const amountIn = (1n << 160n) - 1n
+    expect(() => parseRouteAPIResponse(quote({ amountInRaw: amountIn.toString(),
+      amountInMaximumRaw: amountIn.toString() }), false, { slippageBips: 1n })).toThrow()
+  })
+
+  it.each([false, true])('encodes the overridden input budget for native=%s', native => {
+    const data = native ? quote({ tokens: [TRX, WTRX, B], poolVersions: ['wtrx', 'v2'],
+      poolFees: ['0', '3000'], poolKeys: [null, null] }) : quote()
+    const route = parseRouteAPIResponse(data, false, { slippageBips: 50n })
+    const planner = new TradePlanner([route])
+    planner.encode()
+    const encoded = commands(planner)
+    expect(encoded.find(c => c.type === CommandType.V2_SWAP_EXACT_OUT)!.args[2]).toBe(101n)
+    expect(planner.callValue).toBe(native ? 101n : 0n)
+    if (native) expect(encoded[0].args).toEqual([ADDRESS_THIS.hex, 101n])
   })
 
   it('checks V4 keys against tokens and preserves real parameters', () => {

@@ -30,6 +30,7 @@ export interface ParseRouteOptions {
   /**
    * Slippage in basis points, 0–10000 (e.g. 50 = 0.5%). Integer math only; use this for parity with on-chain
    * or API-defined bps. When set, this takes precedence over {@link ParseRouteOptions.slippage}.
+   * Overrides Exact-In minimum output (rounded down) or Exact-Out maximum input (rounded up).
    */
   slippageBips?: bigint
 }
@@ -106,8 +107,22 @@ function parseExactInRoute(data: ExactInRouteData, isTestnet: boolean, options?:
 function parseExactOutRoute(data: ExactOutRouteData, isTestnet: boolean, options?: ParseRouteOptions): ExactOutSwapTradeRoute {
   validateExactOutPayload(data)
   const fields = parseExactOutFields(data)
+  const amountIn = parseExactOutRaw(data.amountInRaw, 'amountInRaw')
   if (options?.slippage != null || options?.slippageBips != null) {
-    throw new Error('Exact-Out uses the quoted maximum input; slippage overrides are not supported')
+    if (options.slippageBips != null) {
+      const bps = options.slippageBips
+      if (bps < 0n || bps > 10_000n) {
+        throw new Error('slippageBips must be between 0 and 10000')
+      }
+      fields.maximumAmountIn = (amountIn * (10_000n + bps) + 9_999n) / 10_000n
+    } else {
+      const slippage = options.slippage ?? 0
+      if (!Number.isFinite(slippage) || slippage < 0 || slippage >= 1) {
+        throw new Error('slippage must be a decimal fraction in [0, 1), e.g. 0.005 for 0.5%')
+      }
+      const slippageMicro = BigInt(Math.round(slippage * 1_000_000))
+      fields.maximumAmountIn = (amountIn * (1_000_000n + slippageMicro) + 999_999n) / 1_000_000n
+    }
   }
   const tokens = data.tokens.map(exactOutAddress)
   const wrapped = (isTestnet ? TESTNET_WTRX_ADDRESS : MAINNET_WTRX_ADDRESS).hex.toLowerCase()
@@ -126,12 +141,11 @@ function parseExactOutRoute(data: ExactOutRouteData, isTestnet: boolean, options
     }
     return key ? { ...key, hooks: exactOutAddress(key.hooks) } : key
   })
-  if (!/^\d+$/.test(data.amountInRaw)) throw new Error('Invalid Exact-Out amountInRaw')
   const route: ExactOutSwapTradeRoute = {
     pools: parsePools({ ...data, tokens, poolKeys }, isTestnet),
     input: new Currency(tokens[0]),
     output: new Currency(tokens[tokens.length - 1]),
-    amountIn: BigInt(data.amountInRaw),
+    amountIn,
     tradeType: 'EXACT_OUT',
     ...fields,
   }
