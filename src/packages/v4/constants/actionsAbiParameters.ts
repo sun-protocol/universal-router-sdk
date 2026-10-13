@@ -78,7 +78,7 @@ export const ACTIONS_ABI = {
   // 0x0e
   [ACTIONS.TAKE]: parseAbiParameters('address currency, address recipient, uint256 amount'),
   // 0x0f
-  [ACTIONS.TAKE_ALL]: parseAbiParameters('address currency, uint256 minAmount'),
+  [ACTIONS.TAKE_ALL]: parseAbiParameters('address currency, address recipient, uint256 minAmount'),
   // 0x10
   [ACTIONS.TAKE_PORTION]: parseAbiParameters('address currency, address recipient, uint256 bips'),
   // 0x11
