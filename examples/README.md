@@ -1,192 +1,210 @@
 # universal-router-sdk Examples
 
-本目录包含 SDK 的运行示例与 nile / mainnet 集成测试脚本。
+This directory contains runnable SDK examples and Nile/mainnet integration scripts.
 
-## 目录结构
+## Directory structure
 
-```
+```text
 examples/
-├── .env.example              示例 env，复制为 .env 并填入 PRIVATE_KEY
+├── .env.example              Environment template; copy to .env and configure keys
 ├── package.json
-├── tsconfig.json             编译输出到 ./dist
+├── tsconfig.json             Compiles to ./dist
 └── v4-swap/
-    ├── address.ts            nile 上常用代币地址（注意：均为测试网地址）
-    ├── helper.ts             tronWebNile / tronWebMainnet 实例 + 网络常量 + ABI 解码工具
-    ├── errorSelector.ts      根据 txid 反查 revert 错误
-    ├── quote.ts              单笔报价（直连 PoolManager / Quoter）
-    ├── swap.ts               单笔 swap，走 router API + Permit2 + UniversalRouter
-    ├── swapWithoutApi.ts     单笔 swap，跳过 router API，手动构造路由
-    ├── integrateTest.ts      批量集成测试入口，跑完落 testCases.json
-    ├── txBatchCheck.ts       读 testCases.json 查询链上交易结果
-    └── integrateTestRefactorPlan.md  返佣 / mainnet 改造方案（设计稿）
+    ├── address.ts            Network-specific address selection
+    ├── address.nile.ts       Nile token and contract addresses
+    ├── address.mainnet.ts    Mainnet token and contract addresses
+    ├── helper.ts             tronWebNile / tronWebMainnet, network constants, ABI decoding
+    ├── errorSelector.ts      Looks up revert errors by transaction ID
+    ├── quote.ts              Single quote through PoolManager / Quoter
+    ├── swap.ts               Single swap through the router API, Permit2, and UniversalRouter
+    ├── swapWithoutApi.ts     Single swap using a manually constructed route
+    ├── integrateTest.ts      Batch integration runner; writes transaction results
+    └── txBatchCheck.ts       Reads saved results and checks on-chain transaction status
 ```
 
-## 准备
+## Setup
 
-### 1. Node 与依赖
-- Node ≥ 20（见仓库根 `package.json` engines）
-- 在仓库根先 build SDK，再装 examples 依赖：
+### 1. Node.js and dependencies
+
+- Node.js >= 20 (see `engines` in the root `package.json`).
+- Build the SDK at the repository root before installing example dependencies:
 
 ```bash
-# 仓库根
+# Repository root
 npm install
-npm run build          # 生成 dist/，examples 通过 file:.. 依赖它
+npm run build          # Generates dist/; examples depend on the SDK through file:..
 
-# 进入 examples
+# Examples directory
 cd examples
 npm install
 ```
 
-### 2. 环境变量
+### 2. Environment variables
+
 ```bash
 cp .env.example .env
 ```
-编辑 `.env`：
 
-```
-# nile（测试网）
+Edit `.env`:
+
+```text
+# Nile testnet
 PRIVATE_KEY_NILE=<nile-private-key-hex>
 PRIVATE_KEY=<deprecated, fallback for PRIVATE_KEY_NILE>
 
-# mainnet（主网，无 fallback，必须显式提供）
+# Mainnet: must be explicitly supplied; no fallback
 PRIVATE_KEY_MAINNET=<mainnet-private-key-hex>
 
-# mainnet 跑批量集成测试时必填的项目方返佣地址
+# Required referral project address for mainnet batch integration tests
 REFERRAL_PROJECT_ADDRESS_MAINNET=<your-mainnet-project-address>
 ```
 
-主网与测试网私钥**不互相回退**，避免误用测试网密钥发主网交易（或反之）。
+Mainnet and testnet keys **never fall back to each other**, preventing accidental use of a testnet key on mainnet or vice versa.
 
-### 3. 编译
-本目录无 ts-node / tsx，统一编译后运行：
+### 3. Compile
+
+These examples do not use ts-node or tsx. Compile before running:
+
 ```bash
-npx tsc                # 输出到 ./dist
-```
-后续修改源码后需要重新执行 `npx tsc`。
-
-## 典型测试流程
-
-```
-┌────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│ 编辑用例    │───▶│ integrateTest    │───▶│ testCases.json   │
-└────────────┘    │ 发交易+落 txid   │    └──────────────────┘
-                  └──────────────────┘             │
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │ txBatchCheck     │
-                                          │ 链上结果可视化   │
-                                          └──────────────────┘
+npx tsc                # Outputs to ./dist
 ```
 
-1. **编辑 `v4-swap/integrateTest.ts`** 中的 `testCases`，按需开关 `groupWhiteList` 或对单条用例打 `picked: true`
-2. **跑批量测试**：
+Run `npx tsc` again after changing source files.
+
+## Typical test flow
+
+```text
+Edit cases → integrateTest → testCases.<network>.json → txBatchCheck
+             Send transactions and save IDs             Inspect on-chain results
+```
+
+1. **Edit `testCases` in `v4-swap/integrateTest.ts`.** Toggle `groupWhiteList` entries or mark individual cases with `picked: true`.
+2. **Run the batch:**
+
    ```bash
    node dist/v4-swap/integrateTest.js
    ```
-   每条用例会打印形如：
-   ```
+
+   Each case prints a message such as:
+
+   ```text
    ✅ Running TRX->USDT input 0.5% (group: input referral, referral: input/50bps)
    ```
-   完成后写出 `dist/v4-swap/testCases.json`（含 `txId` / `error` / `appliedReferral`）
-3. **查看链上结果**：
+
+   Results are saved to `dist/v4-swap/testCases.<network>.json`, including `txId`, `error`, and `appliedReferral`.
+3. **Inspect on-chain results:**
+
    ```bash
    node dist/v4-swap/txBatchCheck.js
    ```
-   按 group + 返佣模式 + 交易状态彩色打印每笔记录。
 
-## 命令清单
+   Records are color-coded by group, referral mode, and transaction status.
 
-| 用途 | 命令 |
-|---|---|
-| 装依赖 | `npm install`（先在根目录跑过 `npm install && npm run build`） |
-| 编译 | `npx tsc` |
-| 类型检查（不输出） | `npx tsc --noEmit` |
-| 单笔报价（nile，直连合约） | `node dist/v4-swap/quote.js` |
-| 单笔 swap（nile，走 router API） | `node dist/v4-swap/swap.js` |
-| 单笔 swap（nile，手动构造路由） | `node dist/v4-swap/swapWithoutApi.js` |
-| 批量集成测试（nile，默认） | `node dist/v4-swap/integrateTest.js` |
-| 批量集成测试（mainnet） | `MAINNET_CONFIRM=yes NETWORK=mainnet node dist/v4-swap/integrateTest.js` |
-| 批量结果查看（nile） | `node dist/v4-swap/txBatchCheck.js` |
-| 批量结果查看（mainnet） | `NETWORK=mainnet node dist/v4-swap/txBatchCheck.js` |
+## Commands
 
-### 环境变量
+| Purpose | Command |
+| --- | --- |
+| Install dependencies | `npm install` (first run `npm install && npm run build` at the repository root) |
+| Compile | `npx tsc` |
+| Type-check without emitting files | `npx tsc --noEmit` |
+| Single quote on Nile, directly through contracts | `node dist/v4-swap/quote.js` |
+| Single swap on Nile through the router API | `node dist/v4-swap/swap.js` |
+| Single swap on Nile with a manual route | `node dist/v4-swap/swapWithoutApi.js` |
+| Batch integration tests on Nile (default) | `node dist/v4-swap/integrateTest.js` |
+| Batch integration tests on mainnet | `MAINNET_CONFIRM=yes NETWORK=mainnet node dist/v4-swap/integrateTest.js` |
+| Inspect batch results on Nile | `node dist/v4-swap/txBatchCheck.js` |
+| Inspect batch results on mainnet | `NETWORK=mainnet node dist/v4-swap/txBatchCheck.js` |
 
-| 变量 | 默认 | 含义 |
-|---|---|---|
-| `NETWORK` | `nile` | 选择网络。可设 `nile` 或 `mainnet` |
-| `MAINNET_CONFIRM` | — | mainnet 闸门。`NETWORK=mainnet` 时**必须**设为 `yes`，否则 runner 拒绝启动，避免误操作 |
-| `REFERRAL_PROJECT_ADDRESS_MAINNET` | — | mainnet 跑 integrateTest 时必填。否则 runner 拒绝启动 |
-| `GROUPS` | — | 用逗号分隔的 group 白名单覆盖 `groupWhiteList`。例：`GROUPS="v3 swap,v4 swap"` 只跑 v3+v4 |
-| `PRIVATE_KEY_NILE` / `PRIVATE_KEY` | — | nile 私钥（前者优先） |
-| `PRIVATE_KEY_MAINNET` | — | mainnet 私钥（**无 fallback**） |
+### Environment variables
 
-### 输出文件
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `NETWORK` | `nile` | Network selection: `nile` or `mainnet` |
+| `MAINNET_CONFIRM` | — | Must be `yes` when `NETWORK=mainnet`; otherwise the runner refuses to start |
+| `REFERRAL_PROJECT_ADDRESS_MAINNET` | — | Required for mainnet integration tests; otherwise the runner refuses to start |
+| `GROUPS` | — | Comma-separated group allowlist overriding `groupWhiteList`; for example, `GROUPS="v3 swap,v4 swap"` runs only V3 and V4 |
+| `PRIVATE_KEY_NILE` / `PRIVATE_KEY` | — | Nile private key; the former takes precedence |
+| `PRIVATE_KEY_MAINNET` | — | Mainnet private key, with **no fallback** |
 
-`integrateTest` 按网络分别落盘：
-- nile  → `dist/v4-swap/testCases.nile.json`
-- mainnet → `dist/v4-swap/testCases.mainnet.json`
+### Output files
 
-`txBatchCheck` 按 `NETWORK` 读对应的 `testCases.<network>.json`。
+`integrateTest` writes separate files per network:
 
-## 测试用例管理（integrateTest.ts）
+- Nile: `dist/v4-swap/testCases.nile.json`
+- Mainnet: `dist/v4-swap/testCases.mainnet.json`
 
-### 用例分组（`groupWhiteList`）
-默认全部开启。要只跑某几个 group，把不需要的设为 `false`：
+`txBatchCheck` selects `testCases.<network>.json` using `NETWORK`.
+
+## Managing test cases in integrateTest.ts
+
+### Groups with groupWhiteList
+
+All groups are enabled by default. To run selected groups, set the others to `false`:
+
 ```ts
 const groupWhiteList: Record<string, boolean> = {
   [V1_GROUP]: false,
   [V2_GROUP]: false,
-  [V3_GROUP]: true,        // 只跑 v3
-  [V4_GROUP]: true,        // 和 v4
+  [V3_GROUP]: true,        // Run V3
+  [V4_GROUP]: true,        // and V4 only
   // ...
 }
 ```
 
-### 单条用例聚焦（`picked: true`）
-任意用例上加 `picked: true`，本次运行只跑被 picked 的（同时仍受 `groupWhiteList` 过滤）：
+### Selecting individual cases with picked
+
+If any case has `picked: true`, only picked cases run, still subject to `groupWhiteList` filtering:
+
 ```ts
 { group: 'v3 swap', name: 'TRX->USDT', picked: true, swapParams: { ... } }
 ```
 
-### 网络限定（`networks?: ('mainnet'|'nile')[]`）
-用例如果只在某些网络上有意义（例如代币只存在于 nile），加 `networks` 过滤：
+### Network restrictions
+
+For a case that applies only to certain networks, such as a token available only on Nile, set `networks?: ('mainnet'|'nile')[]`:
+
 ```ts
 {
   group: 'psm swap',
   name: 'USDTNEW->USDD ...',
-  networks: ['nile'],   // 主网会自动跳过
+  networks: ['nile'],   // Automatically skipped on mainnet
   swapParams: { ... },
 }
 ```
-不写 `networks` ⇒ 两个网络都跑。当前已标记的 nile-only 用例：
-- 所有引用 `USDDOLD_ADDRESS` 的 stable swap 用例
-- 所有 `psm swap` 用例（依赖 `USDTNEW_ADDRESS`）
-- 所有 `htx sun swap` 用例（依赖 `THTX_ADDRESS` / `TSUN_ADDRESS`）
 
-### Mainnet 金额自动缩放
-`integrateTest` 在 `network === 'mainnet'` 时把示例金额缩到 dust 量级（约为 nile 的 1/1000），避免一次跑批量花真金白银。具体：
+Omitting `networks` allows both networks. Cases currently marked Nile-only include:
 
-| 单位 | nile | mainnet |
-|---|---|---|
+- Stable swap cases referencing `USDDOLD_ADDRESS`.
+- All `psm swap` cases, which depend on `USDTNEW_ADDRESS`.
+- All `htx sun swap` cases, which depend on `THTX_ADDRESS` / `TSUN_ADDRESS`.
+
+### Automatic mainnet amount scaling
+
+When `network === 'mainnet'`, `integrateTest` reduces sample amounts to small values to limit the funds used by a batch:
+
+| Sample | Nile | Mainnet |
+| --- | --- | --- |
 | `amountSampleDecimals3` | 1e3 | 1e1 |
 | `amountSampleDecimals5` | 1e5 | 1e3 |
 | `amountSampleDecimals6` | 1e6 | 1e3 |
 | `amountSampleDecimals18` | 1e18 | 1e15 |
 
-per-case `slippageBips` 可通过 `SwapParams.slippageBips` 覆盖默认 50（0.5%）。
+Set `SwapParams.slippageBips` per case to override the default of 50 bips (0.5%).
 
-### 返佣字段（`SwapParams`）
-| 字段 | 含义 |
-|---|---|
-| `amountInReferralBps` | 输入金额的返佣 bps（上限 85） |
-| `amountOutReferralBps` | 输出金额的返佣 bps（上限 85） |
-| `referralProjectAddress` | 接收返佣的项目方地址 |
-| `noReferral: true` | 显式 opt-out，禁用 `DEFAULT_REFERRAL` 兜底 |
+### Referral fields in SwapParams
 
-> Router API 约束：`amountInReferralBps` 与 `amountOutReferralBps` **不能同时设置**，否则会被 `/swap/routerUniversal` 直接拒掉（报错 `amountInReferralBips and amountOutReferralBips cannot both be set`）。本仓库 SDK 内部的 `computeAppliedReferral` 即便允许 in 优先于 out，也只是直接构造 `TradePlanner` 时的客户端兜底语义，不要依赖它过 router API。
+| Field | Meaning |
+| --- | --- |
+| `amountInReferralBps` | Input referral fee in bps, capped at 85 |
+| `amountOutReferralBps` | Output referral fee in bps, capped at 85 |
+| `referralProjectAddress` | Project address receiving referral credit |
+| `noReferral: true` | Explicit opt-out, disabling the `DEFAULT_REFERRAL` fallback |
 
-### 负向用例（`expectError`）
-对预期失败的用例（比如上面这条 router API 约束），在 `TestCase` 上加 `expectError`，runner 会把"匹配的 throw"识别为通过：
+The router API does not allow both `amountInReferralBps` and `amountOutReferralBps` to be set. `/swap/routerUniversal` rejects this with `amountInReferralBips and amountOutReferralBips cannot both be set`. Although the example helper `computeAppliedReferral` can prioritize input fees over output fees for direct `TradePlanner` construction, that fallback does not override the router API restriction.
+
+### Negative cases with expectError
+
+For expected failures, such as the router API restriction above, add `expectError` to the `TestCase`. The runner treats a matching thrown error as a passing case:
 
 ```ts
 {
@@ -197,16 +215,18 @@ per-case `slippageBips` 可通过 `SwapParams.slippageBips` 覆盖默认 50（0.
 }
 ```
 
-匹配规则：抛出的 `Error.message` **包含** `expectError` 子串即视为通过。结果分三档：
+A match means that the thrown `Error.message` contains the `expectError` substring:
 
-| 实际行为 | runner 处理 | `txBatchCheck` 显示 |
-|---|---|---|
-| 匹配的 error 抛出 | `expectedErrorMet=true`，无 txId | 绿色 `✓ EXPECTED_ERROR` |
-| 错的 error 抛出 | `error` 字段照常存 | 红色 `❌ <message>` |
-| 没抛出（swap 成功了） | 合成一条 `error`（"expected error not raised"） | 红色 `❌ ...` |
+| Actual behavior | Runner handling | txBatchCheck display |
+| --- | --- | --- |
+| Matching error thrown | `expectedErrorMet=true`, no txId | Green `✓ EXPECTED_ERROR` |
+| Different error thrown | Stored in the usual `error` field | Red `❌ <message>` |
+| No error thrown; swap succeeded | Generates an `error` stating "expected error not raised" | Red `❌ ...` |
 
-### `DEFAULT_REFERRAL` 兜底
-当一个用例**完全没有指定**任何返佣字段（也没有 `noReferral: true`），自动套用：
+### DEFAULT_REFERRAL fallback
+
+When a case specifies no referral fields and does not set `noReferral: true`, the following defaults apply:
+
 ```ts
 const DEFAULT_REFERRAL = {
   amountInReferralBps: 50,
@@ -214,25 +234,29 @@ const DEFAULT_REFERRAL = {
   referralProjectAddress: 'TUJ1C4ybdcueXbi8Wmrqscteux5eGvrCh6',
 }
 ```
-这让原有 V1 / V2 / V3 / V4 / stable / PSM / HTX_SUN / mixed 用例无需逐个改造，仍保留默认 input 返佣行为。
 
-### 实际生效的返佣
-跑完后 `testCases.json` 每条会带：
+This preserves default input referral behavior for the existing V1 / V2 / V3 / V4 / stable / PSM / HTX_SUN / mixed cases without configuring each case individually.
+
+### Effective referral settings
+
+Saved results include `appliedReferral` for each case. Its mode is `input`, `output`, or `none`; for example:
+
 ```json
 {
   "appliedReferral": {
-    "mode": "input" | "output" | "none",
+    "mode": "input",
     "bps": 50,
     "projectAddress": "..."
   }
 }
 ```
-`txBatchCheck` 会用 `[ref: input/50bps]` 这样的标签把它呈现出来，便于事后核对每笔交易实际的返佣模式。
 
-## 常见问题
+`txBatchCheck` displays a label such as `[ref: input/50bps]` so the effective referral mode can be checked for each transaction.
 
-- **`Cannot find module '@sun-protocol/universal-router-sdk'`**：仓库根没 build。回到根目录跑 `npm run build`。
-- **`Cannot find module './testCases.<network>.json'`（运行 `txBatchCheck`）**：先以同样的 `NETWORK` 跑 `integrateTest`，结果会输出到 `dist/v4-swap/testCases.<network>.json`。
-- **`Refusing to run on mainnet without MAINNET_CONFIRM=yes`**：mainnet 闸门，必须显式 `MAINNET_CONFIRM=yes` 才能在主网跑批量测试。
-- **`REFERRAL_PROJECT_ADDRESS_MAINNET env var is required`**：mainnet 跑 integrateTest 必须填 `REFERRAL_PROJECT_ADDRESS_MAINNET`，避免无主地址收手续费。
-- **某条用例发交易失败**：用 `picked: true` 锁定它单独跑，再用 `errorSelector.ts` 反查 revert 原因（`txBatchCheck` 已自动调用）。
+## Troubleshooting
+
+- **`Cannot find module '@sun-protocol/universal-router-sdk'`**: Build the SDK by running `npm run build` at the repository root.
+- **`Cannot find module './testCases.<network>.json'` when running txBatchCheck**: Run `integrateTest` with the same `NETWORK` first. It writes results to `dist/v4-swap/testCases.<network>.json`.
+- **`Refusing to run on mainnet without MAINNET_CONFIRM=yes`**: Explicitly set `MAINNET_CONFIRM=yes` to run mainnet batch tests.
+- **`REFERRAL_PROJECT_ADDRESS_MAINNET env var is required`**: Set the mainnet referral project address before running integration tests so fees are attributed to the intended project.
+- **A case fails to submit a transaction**: Isolate it with `picked: true`, then use `errorSelector.ts` to inspect the revert reason. `txBatchCheck` already invokes this lookup automatically.

@@ -1,35 +1,35 @@
-# SDK Exact-Out 实现说明
+# SDK Exact-Out Implementation
 
-本文对应 `feature/native-exact-out` 当前实现，更新于 2026-09-23。说明 QS 报价如何转换为 Universal Router 命令，以及付款、输出返佣和退款的实际行为。本文替代原整体设计与返佣设计文档，仅描述当前实现。
+This guide describes the current `feature/native-exact-out` implementation: how QS quotes become Universal Router commands, and how payments, output referral fees, and refunds work. It replaces the earlier overall design and referral design documents.
 
-## 1. 目标与职责
+## 1. Goals and responsibilities
 
-Exact-Out 以净输出目标和最大输入预算约束交易。SDK 编码协议原生 Exact-Out 命令，池子或 Router 在链上确定实际所需输入；SDK 不用多段 Exact-In 模拟 Exact-Out，也不重新计算各跳报价。
+Exact-Out constrains a trade by its net output target and maximum input budget. The SDK encodes protocol-native Exact-Out commands; the pool or Router determines the actual input required on-chain. The SDK does not emulate Exact-Out with multiple Exact-In swaps or recalculate per-hop quotes.
 
-- **QS**：提供候选路径、预计输入、最大输入、净输出、毛输出及输出返佣费率。
-- **前端**：选择一条报价，指定收款人与返佣项目，准备授权，向匹配的 Router 发送交易。
-- **SDK**：解析报价、检查准入、分段，生成交换、包装、分佣、输出检查和退款命令。
-- **Router / 池子 / Permit2 / ReferralVault**：执行交换与扣款，分发输出和退款，收取并记账返佣。
+- **QS** supplies candidate paths, estimated input, maximum input, net output, gross output, and the output referral fee rate.
+- **Frontend** selects a quote, specifies the recipient and referral project, prepares approvals, and submits the transaction to a compatible Router.
+- **SDK** parses and validates the quote, divides the route into sections, and generates swap, wrap, referral, output-check, and refund commands.
+- **Router / pools / Permit2 / ReferralVault** execute swaps and payments, distribute output and refunds, and collect and account for referral fees.
 
-SDK 不查询链上余额、授权、池状态或部署版本，也不签名、广播交易。编码成功不等于报价可执行。
+The SDK does not query on-chain balances, allowances, pool state, or deployment versions. It does not sign or broadcast transactions. Successful encoding does not establish that a quote is executable.
 
-在 Router 没有历史余额干扰、代币转账行为与协议兼容的前提下，成功交易应使用户得到**不少于净目标**的输出，交换输入不超过最大预算。输出可能因取整或整余额分发而多于目标，不保证严格相等。网络手续费不包含在交换预算中。
+Provided that historical Router balances do not interfere and token transfer behavior is compatible with the protocol, a successful transaction should deliver **at least the net target** without exceeding the swap input budget. Rounding or full-balance distribution can produce more output than the target; exact equality is not guaranteed. Network fees are not included in the swap budget.
 
-## 2. 前端调用流程
+## 2. Frontend flow
 
 ```mermaid
 flowchart TD
-  QS[QS 返回候选报价] --> Select[前端选择一条 EXACT_OUT]
+  QS[QS returns candidate quotes] --> Select[Frontend selects one EXACT_OUT quote]
   Select --> Parse[parseRouteAPIResponse]
   Parse --> Route[ExactOutSwapTradeRoute]
-  Route --> Plan[TradePlanner 构造执行计划并再次校验]
+  Route --> Plan[TradePlanner builds and validates the execution plan]
   Plan --> Encode[encode / ExactOutCompiler]
   Encode --> Params[commands + inputs + callValue]
-  Params --> Execute[前端调用 Router.execute]
-  Execute --> Result[交换 / 输出返佣 / 净输出检查 / 退款]
+  Params --> Execute[Frontend calls Router.execute]
+  Execute --> Result[Swap / output referral / net output check / refund]
 ```
 
-`parseRouteAPIResponse` 接收一条 `RouteData`，不是整个响应或候选数组。Exact-Out 必须显式传入 `tradeType: 'EXACT_OUT'`；省略时按 Exact-In 处理。
+`parseRouteAPIResponse` accepts one `RouteData` entry, not the entire response or candidate array. Exact-Out requires an explicit `tradeType: 'EXACT_OUT'`; omitting it selects Exact-In.
 
 ```typescript
 import {
@@ -62,11 +62,11 @@ function encodeExactOut(
 }
 ```
 
-前端将结果传给已选定的 Router：
+Pass the result to the selected Router:
 
 ```typescript
-// encoded 为上面 encodeExactOut 的返回值；router 为 TronWeb 合约实例。
-// deadline 为前端选择的 Unix 秒级截止时间。
+// encoded is the result of encodeExactOut above; router is a TronWeb contract instance.
+// deadline is the frontend-selected Unix timestamp in seconds.
 if (encoded.callValue > BigInt(Number.MAX_SAFE_INTEGER)) {
   throw new Error('callValue exceeds the client safe integer range')
 }
@@ -75,236 +75,236 @@ await router.execute(encoded.commands, encoded.inputs, deadline).send({
 })
 ```
 
-注意：
+Usage notes:
 
-- `isTestnet` 影响 TRX/WTRX 币对识别，不会自动选择 Router 或校验部署。
-- Exact-Out 支持 `slippageBips`（优先）或 `slippage` 覆盖，不传时沿用 QS 最大输入。`slippageBips` 为 0–10000 的 bigint，最大输入为 `ceil(amountInRaw × (10000 + slippageBips) / 10000)`。旧 `slippage` 参数为 [0, 1) 的小数，按 Exact-In 规则取整到百万分之一，再向上取整计算预算。零值表示最大输入等于预计输入。前端展示、授权和 TRX callValue 使用解析后的预算，净输出与毛输出不变。
-- 仅接受一条路由；不能启用 `tradeSpiltOptions.enable` 或 `oneShotTransfer`。
-- 在创建 Planner 前设置好路由；每笔交易新建 Planner，调用一次 `encode()`。重复调用会追加命令。
-- Exact-Out 编码失败会恢复本次编码前的 `commands` 和 `inputs`；这不是链上回滚机制。
-- 输出与退款都发给 `recipient`，省略时使用 `MSG_SENDER`。付款人仍是交易发送者。
+- `isTestnet` controls TRX/WTRX pair recognition. It does not select a Router or validate its deployment.
+- Exact-Out supports `slippageBips` (preferred) or `slippage` overrides. Without either, it uses the QS maximum input. `slippageBips` is a bigint from 0 through 10000; the maximum input becomes `ceil(amountInRaw × (10000 + slippageBips) / 10000)`. The legacy `slippage` parameter is a fraction in [0, 1), rounded to millionths as in Exact-In before rounding the budget up. Zero sets the maximum input to the estimated input. Frontend display, approvals, and TRX callValue use the parsed budget; net and gross output stay unchanged.
+- Only one route is accepted. Do not enable `tradeSpiltOptions.enable` or `oneShotTransfer`.
+- Configure the route before creating the Planner. Create a fresh Planner and call `encode()` once per transaction; repeated calls append commands.
+- Failed Exact-Out encoding restores `commands` and `inputs` to their state before that encoding attempt. This is not an on-chain rollback mechanism.
+- Both output and refunds go to `recipient`, defaulting to `MSG_SENDER`. The transaction sender remains the payer.
 
-## 3. 报价与内部金额
+## 3. Quote fields and internal amounts
 
-类型见 [routeAPI.ts](../src/types/routeAPI.ts) 和 [route.ts](../src/types/route.ts)。Raw 金额为十进制整数字符串，解析后为最小单位 `bigint`。
+See [routeAPI.ts](../src/types/routeAPI.ts) and [route.ts](../src/types/route.ts) for types. Raw amounts are decimal integer strings, parsed into `bigint` values in the token's smallest unit.
 
-| QS 字段 | 内部字段 | 用途 |
+| QS field | Internal field | Purpose |
 | --- | --- | --- |
-| `amountInRaw` | `amountIn` | QS 预计输入，用于预算一致性、PSM 精度检查，以及纯解包的拉款金额；不是一般交换的实际扣款结果 |
-| `amountInMaximumRaw` | `maximumAmountIn` | 默认最大输入，传滑点时根据预计输入覆盖；TRX 输入时也是 `callValue` |
-| `amountOutRaw` | `amountOut` | 扣佣后的净输出目标，作为最后输出 SWEEP 的最低余额 |
-| `grossAmountOutRaw` | `grossAmountOut` | 交给协议交换命令的毛输出目标 |
-| `amountOutReferralBips` | `outputReferralBips` | 输出收费比例，省略为零 |
-| `amountInReferralBips` | 不保留 | 只用于拒绝非零输入收费比例 |
+| `amountInRaw` | `amountIn` | Estimated input, used for budget consistency, PSM precision checks, and the transfer amount for pure unwrapping; not the actual amount paid by a general swap |
+| `amountInMaximumRaw` | `maximumAmountIn` | Default maximum input, overridden from estimated input when slippage is supplied; also `callValue` for TRX input |
+| `amountOutRaw` | `amountOut` | Net output target after fees; the minimum balance for the final output SWEEP |
+| `grossAmountOutRaw` | `grossAmountOut` | Gross output target passed to the protocol swap command |
+| `amountOutReferralBips` | `outputReferralBips` | Output fee rate, defaulting to zero |
+| `amountInReferralBips` | Not retained | Used only to reject nonzero input fee rates |
 
-`ExactOutSwapTradeRoute` 不提供 `minimumAmountOut` 或嵌套的 `exactOut` 金额对象。前端展示“至少得到”应读取 `route.amountOut`。
+`ExactOutSwapTradeRoute` has neither `minimumAmountOut` nor a nested `exactOut` amount object. Read `route.amountOut` to display the minimum amount received.
 
-`amountIn`、`amountOut`、`amountInMaximum` 等格式化字符串及公共 `stepAmountsOut` 仍属于 QS 类型，但不参与 Exact-Out 金额编码。SDK 不读取 `stepAmountsInRaw`、`stepAmountsOutRaw`、逐跳 execution mode，也不读取 `amountInRawReferral`、`amountOutRawReferral`。
+Formatted strings such as `amountIn`, `amountOut`, and `amountInMaximum`, along with the common `stepAmountsOut` field, remain part of the QS types but do not determine Exact-Out amount encoding. The SDK does not read `stepAmountsInRaw`, `stepAmountsOutRaw`, per-hop execution modes, `amountInRawReferral`, or `amountOutRawReferral`.
 
-预算检查中，设 QS 预计输入为 `Q = amountIn`，最大输入为 `M = maximumAmountIn`：
+For budget validation, let the estimated input be `Q = amountIn` and the maximum input be `M = maximumAmountIn`:
 
 ```text
 M >= Q > 0
 ```
 
-毛输出一致性检查中，设净目标为 `N = amountOut`，毛目标为 `G = grossAmountOut`，输出费率为 `b = outputReferralBips`，基数为 `D = 10000`：
+For gross output consistency, let the net target be `N = amountOut`, the gross target be `G = grossAmountOut`, the output fee rate be `b = outputReferralBips`, and the denominator be `D = 10000`:
 
 ```text
-0 <= b < D，且 b 为整数
+0 <= b < D, with integer b
 G - floor(G × b / D) >= N > 0
 ```
 
-SDK 用这一关系检查报价能否覆盖净目标，不要求毛目标是满足条件的最小值，也不会将计算结果作为固定佣金传给合约。
+This relationship checks whether the quote covers the net target. The SDK does not require the smallest possible gross target, nor does it pass the calculated fee to the contract as a fixed amount.
 
-## 4. 路径解析与准入
+## 4. Path parsing and validation
 
-解析入口见 [parseRouteAPIResponse.ts](../src/core/parseRouteAPIResponse.ts)，路由准入见 [exactOut.ts](../src/core/exactOut.ts)。手工构造的路由也会在生成执行计划时接受准入检查。
+Quote parsing is implemented in [parseRouteAPIResponse.ts](../src/core/parseRouteAPIResponse.ts), and route validation in [exactOut.ts](../src/core/exactOut.ts). Manually constructed routes are also validated when building an execution plan.
 
-报价需满足：
+A quote must satisfy these conditions:
 
-- 至少一跳；`tokens.length = poolVersions.length + 1`。
-- `poolKeys.length = poolVersions.length`；非 V4 跳可填 `null`。
-- `poolFees` 至少包含每跳费用，多出的展示条目不参与编码。
-- 支持的版本字符串为 `v1`、`v2`、`v3`、`v4`、`usdt20psm`、`wtrx`。
-- 当前网络 TRX/WTRX 币对优先识别为包装，即使标为 `v2`、`v3`、`v4`；但任意未知版本并不会因此被接受。
-- 地址接受 Base58Check、20 字节 `0x` 格式或带 `41` 前缀的 TRON hex；Exact-Out 做格式与 Base58 checksum 校验。
-- V4 PoolKey 的 token0/token1 必须与该跳排序后的币对一致；使用 PoolKey 中的 fee、hooks、parameters。
+- At least one hop, with `tokens.length = poolVersions.length + 1`.
+- `poolKeys.length = poolVersions.length`; non-V4 hops may use `null`.
+- `poolFees` supplies at least one fee per hop. Extra display entries do not affect encoding.
+- Supported version strings are `v1`, `v2`, `v3`, `v4`, `usdt20psm`, and `wtrx`.
+- The current network's TRX/WTRX pair is recognized as wrapping first, even when labelled `v2`, `v3`, or `v4`. This does not allow arbitrary unknown version strings.
+- Addresses may use Base58Check, 20-byte `0x` format, or TRON hex with a `41` prefix. Exact-Out validates formatting and Base58 checksums.
+- V4 PoolKey token0/token1 must match the sorted token pair for that hop. Encoding uses the PoolKey's fee, hooks, and parameters.
 
-执行路由要求池连通、币对顺序正确、最后币种匹配输出，并拒绝重复池。重复身份使用协议与币对，V3 增加 fee，V4 再增加 hooks 与 parameters，不查询真实池地址。
+Execution requires connected pools, correctly ordered token pairs, and a final currency matching the route output. Repeated pools are rejected. Pool identity uses the protocol and token pair, plus the fee for V3, and the fee, hooks, and parameters for V4; validation does not query actual pool addresses.
 
-| 路由 | 当前准入与编码 |
+| Route | Validation and encoding |
 | --- | --- |
-| V1 | TRX→Token、Token→TRX、Token→Token；可显式写 Token→TRX→Token，编码只保留端点 |
-| V2 / V3 | 同一协议单跳或多个不同池；原生 TRX 需经 WTRX 转换 |
-| V4 | 同一协议单跳或多跳；可直接使用原生 TRX |
-| PSM | 单跳、`PoolFlag.PSM`，带下面的固定精度关系检查 |
-| 纯包装 | 单跳 TRX→WTRX 或 WTRX→TRX |
-| 包装 + 交换 | 允许入口 TRX→WTRX、出口 WTRX→TRX；不允许中途包装 |
-| 混合协议、拆单、Stable、HTX Sun | Exact-Out 拒绝 |
+| V1 | TRX→Token, Token→TRX, Token→Token; an explicit Token→TRX→Token path is accepted, but only the endpoints are encoded |
+| V2 / V3 | One protocol with a single hop or multiple distinct pools; native TRX requires WTRX conversion |
+| V4 | One protocol with one or more hops; native TRX is supported directly |
+| PSM | One hop using `PoolFlag.PSM`, subject to the fixed precision checks below |
+| Pure wrapping | One TRX→WTRX or WTRX→TRX hop |
+| Wrapping plus swapping | Entry TRX→WTRX and exit WTRX→TRX are allowed; intermediate wrapping is rejected |
+| Mixed protocols, splits, Stable, HTX Sun | Rejected for Exact-Out |
 
-V1 显式中间币仅能为 TRX，最多两个 V1 池；端点式 Token→Token 的内部 TRX 桥由合约执行。SDK 支持仍要求 Router 部署提供对应命令。
+An explicit V1 intermediate currency must be TRX, with at most two V1 pools. The contract performs the internal TRX bridge for an endpoint-only Token→Token path. SDK support still requires a Router deployment with the corresponding commands.
 
-输出收款标记不能为零地址或 `ADDRESS_THIS`。该检查不查询实际 Router 地址，前端应提供真实的外部收款地址。
+The output recipient marker cannot be the zero address or `ADDRESS_THIS`. This check does not query the actual Router address; the frontend should supply an external recipient address.
 
-### 金额宽度
+### Amount widths
 
-输入与输出还需满足命令编码宽度：净目标不超过 `uint160`；ERC20 最大输入不超过 `uint160`；原生最大输入一般不超过 `uint256`。V3 毛输出不超过 `int256` 正数上限；V4 毛输出不超过 `int128` 正数上限，最大输入不超过 `uint128`。其他基础金额使用 `uint256` 范围。
+Amounts must fit command encoding limits. The net target and ERC20 maximum input must fit `uint160`; the native maximum input generally must fit `uint256`. V3 gross output must fit the positive range of `int256`. V4 gross output must fit the positive range of `int128`, and its maximum input must fit `uint128`. Other base amounts use the `uint256` range.
 
-### PSM 精度限制
+### PSM precision constraints
 
-设 QS 预计输入为 `Q = amountIn`，毛输出为 `G = grossAmountOut`，当前实现使用固定精度比 `R = 10^12`，接受以下任一关系：
+Let the estimated input be `Q = amountIn`, gross output be `G = grossAmountOut`, and the fixed precision ratio be `R = 10^12`. The current implementation accepts either relationship:
 
 ```text
 G = Q × R
-或
-Q % R = 0 且 G = Q / R
+or
+Q % R = 0 and G = Q / R
 ```
 
-SDK 不在准入中写死 USDD、USDT 或 PSM 合约地址；命令携带 flag，由 Router 所用的注册配置选择池。上述关系不是对真实部署、方向或实时费率的链上验证。即使合约能对非整除目标向上取整，当前 SDK 仍会拒绝不符合该关系的报价。
+Validation does not hardcode USDD, USDT, or PSM contract addresses. The command carries a flag, and the Router's registered configuration selects the pool. These relationships do not validate the actual deployment, direction, or current fee on-chain. Even if the contract can round up a non-divisible target, the SDK rejects quotes that do not satisfy this relationship.
 
-## 5. 命令编译与各协议差异
+## 5. Command compilation and protocol differences
 
-[buildExecutionFromRoute.ts](../src/core/buildExecutionFromRoute.ts) 将相邻同协议池组成 section。[TradePlanner.ts](../src/core/TradePlanner.ts) 按交易类型分发，[compileExactOut.ts](../src/core/compileExactOut.ts) 负责 Exact-Out 命令，Exact-In 仍由自己的编译器处理。
+[buildExecutionFromRoute.ts](../src/core/buildExecutionFromRoute.ts) groups adjacent pools of the same protocol into sections. [TradePlanner.ts](../src/core/TradePlanner.ts) dispatches by trade type; [compileExactOut.ts](../src/core/compileExactOut.ts) handles Exact-Out commands. Exact-In retains its own compiler.
 
-整体顺序为：
+The overall sequence is:
 
 ```text
-可选 PERMIT2_PERMIT
-→ 纯解包需要的 PERMIT2_TRANSFER_FROM
-→ 按 section 执行包装 / 协议交换 / 解包
-→ 可选 PAY_REFERRAL（最终输出币种）
-→ SWEEP（输出币种，recipient，净目标）
-→ 适用的剩余 WTRX 解包与输入退款
+Optional PERMIT2_PERMIT
+→ PERMIT2_TRANSFER_FROM for pure unwrapping
+→ Wrapping / protocol swaps / unwrapping by section
+→ Optional PAY_REFERRAL in the final output currency
+→ SWEEP(output currency, recipient, net target)
+→ Remaining WTRX unwrapping and input refunds where applicable
 ```
 
-这些支付和清理命令由 SDK 添加，QS 不提供命令列表。`commands` 保存命令字节，`inputs` 保存对应 ABI 参数；通过一次 `Router.execute(bytes,bytes[],uint256)` 执行。
+The SDK adds these payment and cleanup commands; QS does not provide a command list. `commands` contains command bytes and `inputs` contains their ABI parameters. A single `Router.execute(bytes,bytes[],uint256)` executes them.
 
-下表中，`G` 是当前毛输出目标 `grossAmountOut`，`M` 是最大输入 `maximumAmountIn`，`THIS` 表示 `ADDRESS_THIS`：
+In the table below, `G` is `grossAmountOut`, `M` is `maximumAmountIn`, and `THIS` is `ADDRESS_THIS`:
 
-| 协议 | 交换命令与路径 |
+| Protocol | Swap command and path |
 | --- | --- |
-| V1 | `V1_SWAP_EXACT_OUT(THIS, G, M, [input, output], payerIsUser)`；合约内部完成 TRX 桥 |
-| V2 | `V2_SWAP_EXACT_OUT(THIS, G, M, 正向地址路径, payerIsUser)` |
-| V3 | `V3_SWAP_EXACT_OUT(THIS, G, M, 反向 bytes 路径, payerIsUser)`；token 与 fee 一起反转 |
-| PSM | `PSM_SWAP_EXACT_OUT(THIS, G, M, 正向地址路径, flags, payerIsUser)` |
-| V4 | 外层 `V4_SWAP` 内含 Exact-Out swap、settle、take actions |
+| V1 | `V1_SWAP_EXACT_OUT(THIS, G, M, [input, output], payerIsUser)`; the contract performs the TRX bridge |
+| V2 | `V2_SWAP_EXACT_OUT(THIS, G, M, forwardAddressPath, payerIsUser)` |
+| V3 | `V3_SWAP_EXACT_OUT(THIS, G, M, reversedBytesPath, payerIsUser)`; tokens and fees are reversed together |
+| PSM | `PSM_SWAP_EXACT_OUT(THIS, G, M, forwardAddressPath, flags, payerIsUser)` |
+| V4 | An outer `V4_SWAP` containing Exact-Out swap, settle, and take actions |
 
-`payerIsUser` 为真需满足：交换 section 是第一个 section，且其输入不是原生币。存在入口包装时，交换由 Router 支付。
+`payerIsUser` is true only when the swap section is the first section and its input is not native currency. When there is an entry wrap, the Router pays for the swap.
 
-### V4 路径与结算
+### V4 paths and settlement
 
-单跳使用 `CL_SWAP_EXACT_OUT_SINGLE`，包含 PoolKey、方向、毛目标、最大输入。多跳使用 `CL_SWAP_EXACT_OUT`：`currencyOut` 是最终输出；path 按正向池顺序构造，每项 `intermediateCurrency` 填该跳的正向输入币种，由配套 Router 逆序遍历。
+Single-hop swaps use `CL_SWAP_EXACT_OUT_SINGLE`, containing the PoolKey, direction, gross target, and maximum input. Multi-hop swaps use `CL_SWAP_EXACT_OUT`: `currencyOut` is the final output, and the path is built in forward pool order. Each `intermediateCurrency` is that hop's forward input currency; the compatible Router traverses the path in reverse.
 
-交换之后，付款方式决定结算 action。下表中 `M` 表示最大输入 `maximumAmountIn`，`OPEN_DELTA` 表示读取当前未结算 delta：
+After the swap, the payer determines the settlement action. Here, `M` is `maximumAmountIn`, and `OPEN_DELTA` means reading the current unsettled delta:
 
-| 付款方式 | Action | 含义 |
+| Payment mode | Action | Meaning |
 | --- | --- | --- |
-| 用户 ERC20 付款 | `SETTLE_ALL(input, M)` | 清偿该输入币的实际欠款，并以 M 限制结算金额 |
-| Router 付款，例如原生 TRX | `SETTLE(input, OPEN_DELTA, false)` | 从 Router 资金清偿实际欠款；不是再次拉取 M，最大输入还由 swap 参数限制 |
-| 提取输出 | `TAKE(output, THIS, OPEN_DELTA)` | 将可提取输出送到 Router，随后由外层分佣和 SWEEP 分发 |
+| User pays ERC20 | `SETTLE_ALL(input, M)` | Settle the actual debt in the input currency, capped at M |
+| Router pays, such as native TRX input | `SETTLE(input, OPEN_DELTA, false)` | Settle actual debt from Router funds, without pulling M again; swap parameters also enforce the maximum input |
+| Collect output | `TAKE(output, THIS, OPEN_DELTA)` | Send available output to the Router for outer referral and SWEEP distribution |
 
-Exact-Out 的 `hookData` 固定为空 bytes `0x`，不支持自定义 Hook 数据。Exact-In 当前使用 20 字节零，两者不保证对 Hook 等价。动态费 PoolKey 可以编码，但不意味着任意 Hook 或动态费部署已被验证。
+Exact-Out always uses empty `hookData` (`0x`); custom hook data is not supported. Exact-In currently uses 20 zero bytes, which hooks may treat differently. Dynamic-fee PoolKeys can be encoded, but that does not establish that arbitrary hooks or dynamic-fee deployments have been validated.
 
-## 6. 授权、实际扣款与退款
+## 6. Approvals, actual payments, and refunds
 
-### ERC20 输入
+### ERC20 input
 
-前端需完成 token 对 Permit2 的授权，以及 Permit2 对目标 Router 的 allowance；也可提供有效 Permit2 签名，由 SDK 在开头编码 `PERMIT2_PERMIT`。签名不能替代 token 对 Permit2 的授权。
+The frontend must approve Permit2 on the input token and grant the target Router a Permit2 allowance. Alternatively, a valid Permit2 signature lets the SDK prepend `PERMIT2_PERMIT`. The signature does not replace the token's approval of Permit2.
 
-余额和授权覆盖 `maximumAmountIn` 可覆盖整个报价预算，不表示该预算必定全部扣除：
+Balances and allowances covering `maximumAmountIn` cover the full budget, but the full budget is not necessarily spent:
 
-- V2/V3/PSM 普通用户付款路径：合约按实际需求扣款，没有由 SDK 预拉取的滑点余款。
-- V4：交换后结算实际欠款。
-- V1：由兼容 Router 处理预计需求的拉款和内部交换；SDK 在输出分发后追加输入币 `SWEEP(..., 0)` 退还可能剩余的输入。
-- 纯 WTRX→TRX：SDK 先拉取 `amountIn` 到 Router，再解包 Router 的 WTRX 余额；不会预拉取整个最大预算。
+- Standard user-paid V2/V3/PSM paths pull the actual required input. The SDK does not pre-transfer an extra slippage allowance.
+- V4 settles the actual debt after the swap.
+- A compatible V1 Router handles the required input transfer and internal swaps. The SDK appends an input-token `SWEEP(..., 0)` after output distribution to refund any remaining input.
+- Pure WTRX→TRX first transfers `amountIn` to the Router, then unwraps the Router's WTRX balance. It does not pre-transfer the full maximum budget.
 
-Exact-Out 的 `permitEnabled` 不控制上述付款选择；实现读取的是可选 permit 签名及 section 的付款位置。
+Exact-Out's `permitEnabled` does not control these payment choices. The implementation uses the optional permit signature and the section's position in the payment flow.
 
-### 原生 TRX 输入
+### Native TRX input
 
-`planner.callValue = maximumAmountIn`，单位为 SUN；ERC20 输入时为零。此 getter 对旧 Exact-In 仍返回零，不应直接用来替代其原有付款逻辑。
+`planner.callValue = maximumAmountIn`, in SUN; it is zero for ERC20 input. This getter also returns zero for legacy Exact-In, so it must not replace the existing Exact-In payment logic.
 
-| 路径 | 预付款与退款 |
+| Path | Prefunding and refunds |
 | --- | --- |
-| TRX→WTRX→V2/V3 等 | 先包装最大预算；交换实际使用 WTRX；输出分发后解包剩余 WTRX，再 SWEEP TRX 给 recipient |
-| 原生 TRX→V1/V4 | 直接使用 Router 的 TRX；最后 SWEEP 剩余 TRX 给 recipient |
-| 纯 TRX→WTRX | 收到最大预算，但只包装 `grossAmountOut`；分发 WTRX 后退还剩余 TRX |
+| TRX→WTRX→V2/V3, etc. | Wrap the maximum budget, spend the required WTRX, then unwrap remaining WTRX after output distribution and SWEEP TRX to the recipient |
+| Native TRX→V1/V4 | Use the Router's TRX directly, then SWEEP remaining TRX to the recipient |
+| Pure TRX→WTRX | Receive the maximum budget but wrap only `grossAmountOut`; distribute WTRX and refund remaining TRX |
 
-纯包装的金额来自 QS。当前准入没有独立强制纯包装 `amountIn = grossAmountOut`，因此不能将成功解析当作 1:1 报价关系已完整验证；不足额等问题可能在执行时才失败。
+Pure wrapping amounts come from QS. Current validation does not independently enforce `amountIn = grossAmountOut` for pure wrapping, so successful parsing does not establish a fully validated 1:1 quote. Insufficient funding and similar issues may fail only during execution.
 
-## 7. 输出端返佣
+## 7. Output referral fees
 
-Exact-Out 仅支持无返佣或输出端返佣：非零 `amountInReferralBips` 被拒绝；`referralOptions.mode = 'input'` 即使为零费率也被拒绝。QS 的 Raw 佣金字段不参与 SDK 编码或校验。
+Exact-Out supports no referral fee or output referral fees only. Nonzero `amountInReferralBips` is rejected, as is `referralOptions.mode = 'input'`, even at a zero fee rate. QS raw referral amount fields do not affect SDK encoding or validation.
 
-报价输出费率大于零时，前端必须提供 `mode: 'output'`、相同的 `bps` 和项目地址。无收费报价不能配置非零收费。项目地址是 Vault 的返佣记账地址，与兑换收款人 `recipient` 独立。
+When the quote has a positive output fee rate, the frontend must supply `mode: 'output'`, matching `bps`, and a project address. A zero-fee quote cannot be combined with a nonzero fee option. The project address is the Vault's referral accounting address, separate from the swap `recipient`.
 
-交换及出口解包完成后，SDK 追加：
+After swaps and any exit unwrapping, the SDK appends:
 
 ```text
 PAY_REFERRAL(outputToken, projectAddress, bps)
 SWEEP(outputToken, recipient, amountOut)
 ```
 
-实际收费时，设 Router 此时的输出币余额为 `B`，输出费率为 `b`，比例基数为 `D = 10000`，链上收取的佣金为 `F`：
+Let the Router's output-token balance at fee collection be `B`, the output fee rate be `b`, the denominator be `D = 10000`, and the fee collected on-chain be `F`:
 
 ```text
 F = floor(B × b / D)
-用户获得 SWEEP 时剩余的输出余额
+The user receives the remaining output balance at SWEEP time.
 ```
 
-`B` 是执行时余额，不是直接使用 QS 上报的固定佣金，也不一定等于 QS 毛目标。`PAY_REFERRAL` 由 Router 按 Vault 的费率上限检查，并依次更新余额快照、转入佣金、调用分佣记账。Vault 再按默认或项目专属比例分给项目和协议；SDK 的输出费率与 Vault 的分账比例是两个不同参数。
+`B` is the execution-time balance, not a fixed QS fee amount, and need not equal the quoted gross output. `PAY_REFERRAL` checks the Vault's fee limit, updates the balance snapshot, transfers the fee, and invokes referral accounting. The Vault then splits the fee between the project and protocol using its default or project-specific share. The SDK output fee rate and the Vault's allocation ratio are separate parameters.
 
-例如用输出币最小单位表示：净目标为 100000，实际毛输出余额为 101010，输出费率为 100 bips（1%）：
+For example, in output-token base units, a net target of 100000, actual gross output balance of 101010, and fee rate of 100 bips (1%) give:
 
 ```text
-佣金 = floor(101010 × 100 / 10000) = 1010
-输出余额剩余 100000，SWEEP 最低要求也是 100000
-若 Vault 项目比例为 80%，项目记账 808，协议记账 202
+Fee = floor(101010 × 100 / 10000) = 1010
+Remaining output = 100000; the SWEEP minimum is also 100000.
+With an 80% Vault project share, the project is credited 808 and the protocol 202.
 ```
 
-Router 必须配置可用的 ReferralVault，Vault 也必须允许该 Router 调用；最大费率、项目白名单等由链上配置决定，SDK 不查询或设置这些状态。
+The Router must have a usable ReferralVault, and the Vault must authorize that Router. Fee limits and project allowlists are on-chain configuration; the SDK neither queries nor changes them.
 
-## 8. SWEEP、同币循环与余额限制
+## 8. SWEEP, same-currency loops, and balance limitations
 
-`SWEEP(token, recipient, minimum)` 的 `minimum` 是余额下限，不是固定转账数量。余额不足则失败，足够时发送该币种全部可用余额。因此输出检查与输入退款的用途不同：
+In `SWEEP(token, recipient, minimum)`, `minimum` is a balance floor, not a fixed transfer amount. Insufficient balance causes failure; otherwise, the full available token balance is sent. Output checks and input refunds therefore serve different purposes:
 
-- 输出 SWEEP 的 minimum 为净目标 `amountOut`。
-- 输入退款 SWEEP 的 minimum 为零，允许没有退款。
+- Output SWEEP uses the net target `amountOut` as its minimum.
+- Input refund SWEEP uses zero, allowing no refund.
 
-SDK 保留 Router 的整余额语义，不隔离历史余额。外部转入或以前遗留的余额可能补足输出检查、进入返佣基数或被一起扫走。无历史余额干扰时，输出收费才可视为对本笔实际输出收费。
+The SDK preserves the Router's full-balance semantics and does not isolate historical balances. External transfers or leftover funds may satisfy an output check, enter the referral fee base, or be swept along with the trade. Output fees can be interpreted as fees on this transaction's output only when historical balances do not interfere.
 
-本笔退款不能混成输出。例如预付 120 A，实际交换消耗 105 A，路线最终输出 100 A，Router 持有的 115 A 包含 15 A 退款；直接按 115 A 收输出费会把退款收费。该例用于解释风险，当前准入会拒绝识别出的此类预付款碰撞。
+A transaction's refund must not count as output. For example, prefunding 120 A, spending 105 A, and receiving 100 A leaves 115 A in the Router, including a 15 A refund. Charging an output fee on all 115 A would also charge the refund. This illustrates the risk; current validation rejects the prepaid overlaps it identifies.
 
-实现将原生输入或 V1 视为预付路径，拒绝其交换输入/输出、路由输入/输出以及交换输入/最终输出中的相关同币碰撞；V4 交换输入等于交换输出的净 delta 循环也被拒绝。用户直接付款的 V2/V3 同币路线可通过准入，但需使用不同池并满足其他检查。
+Native-input and V1 routes are treated as prepaid paths. Validation rejects relevant same-currency overlaps between swap input/output, route input/output, and swap input/final output. V4 net-delta loops with identical swap input and output are also rejected. User-paid V2/V3 same-currency routes may pass validation when they use distinct pools and satisfy the other checks.
 
-## 9. 代码定位与验证
+## 9. Source map and validation
 
-| 文件 | 职责 |
+| File | Responsibility |
 | --- | --- |
-| [routeAPI.ts](../src/types/routeAPI.ts) | QS Exact-In / Exact-Out 联合类型 |
-| [route.ts](../src/types/route.ts) | 路由、执行计划与选项 |
-| [parseRouteAPIResponse.ts](../src/core/parseRouteAPIResponse.ts) | 报价解析、金额映射、网络包装识别 |
-| [exactOut.ts](../src/core/exactOut.ts) | 金额、地址、协议、精度和结算组合准入 |
-| [buildExecutionFromRoute.ts](../src/core/buildExecutionFromRoute.ts) | 连通路径与同协议分段 |
-| [TradePlanner.ts](../src/core/TradePlanner.ts) | 交易类型分发、callValue、编码失败恢复 |
-| [compileExactOut.ts](../src/core/compileExactOut.ts) | Exact-Out 交换、分佣、输出和退款编排 |
-| [encodePath.ts](../src/core/encodePath.ts) | 各协议路径格式 |
-| [createCommand.ts](../src/core/createCommand.ts) | Router 命令参数 ABI |
-| [ActionsPlanner.ts](../src/packages/v4/entities/ActionsPlanner.ts) | V4 action 编码 |
+| [routeAPI.ts](../src/types/routeAPI.ts) | QS Exact-In / Exact-Out union types |
+| [route.ts](../src/types/route.ts) | Routes, execution plans, and options |
+| [parseRouteAPIResponse.ts](../src/core/parseRouteAPIResponse.ts) | Quote parsing, amount mapping, and network-specific wrapping recognition |
+| [exactOut.ts](../src/core/exactOut.ts) | Amount, address, protocol, precision, and settlement validation |
+| [buildExecutionFromRoute.ts](../src/core/buildExecutionFromRoute.ts) | Connected paths and protocol sections |
+| [TradePlanner.ts](../src/core/TradePlanner.ts) | Trade-type dispatch, callValue, and recovery after encoding errors |
+| [compileExactOut.ts](../src/core/compileExactOut.ts) | Exact-Out swaps, referrals, output distribution, and refunds |
+| [encodePath.ts](../src/core/encodePath.ts) | Protocol-specific path formats |
+| [createCommand.ts](../src/core/createCommand.ts) | Router command parameter ABIs |
+| [ActionsPlanner.ts](../src/packages/v4/entities/ActionsPlanner.ts) | V4 action encoding |
 
-本地验证：
+Local validation:
 
 ```sh
 npm test
 npm run build
-# 已准备匹配合约源码、依赖、Foundry 和 solc 后：
+# After preparing compatible contract sources, dependencies, Foundry, and solc:
 ROUTER_SOURCE=/path/to/sunswap-universal-router npm run test:contracts
 ```
 
-SDK 测试覆盖准入、命令及支付顺序、V3 反向路径、V4 路径和结算、分佣、退款、编码失败恢复，以及 Exact-In 编码基线。详见 [exactOut.test.ts](../src/core/exactOut.test.ts)。
+SDK tests cover validation, command and payment ordering, reversed V3 paths, V4 paths and settlement, referrals, refunds, recovery after encoding errors, and Exact-In encoding baselines. See [exactOut.test.ts](../src/core/exactOut.test.ts).
 
-合约执行测试将 SDK 编码送进实际 Router / Permit2：V1/V2/V3/PSM 使用受控池或 exchange，V4 使用本地真实 PoolManager 和流动性 fixture。V2 受控池不完整模拟生产池不变量与储备更新；动态费测试中的编码证据不能替代真实动态费或 Hook 执行证据。说明见 [tests/contracts/README.md](../tests/contracts/README.md)。
+Contract execution tests send SDK-encoded calldata through the actual Router and Permit2. V1/V2/V3/PSM use controlled pools or exchanges; V4 uses a local actual PoolManager and liquidity fixtures. The controlled V2 pools do not fully simulate production invariants or reserve updates. Encoding coverage for dynamic fees does not replace execution evidence for actual dynamic fees or hooks. See [tests/contracts/README.md](../tests/contracts/README.md).
 
-Nile 集成框架保留在本地，不作为仓库发布内容。构造 QS 格式报价的测试只能验证该输入下的 SDK→Router 链路，不代表真实 QS 的报价生成已经验证。部署地址、Vault 配置、交易结果属于具体环境记录，不写入 SDK 通用支持承诺。
+The Nile integration harness remains local and is not published with the repository. Tests using constructed QS-shaped quotes validate that SDK→Router path, not real QS quote generation. Deployment addresses, Vault configuration, and transaction results are environment-specific records, not general SDK support guarantees.
 
-可运行的编码示例见 [examples/exact-out/encode.cjs](../examples/exact-out/encode.cjs)，其报价文件包含单条路由，示例默认按主网包装地址解析。
+For a runnable encoding example, see [examples/exact-out/encode.cjs](../examples/exact-out/encode.cjs). Its input file contains a single quote, and the example parses wrapping addresses for mainnet by default.
