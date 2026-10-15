@@ -1,5 +1,6 @@
 import { Hex, encodePacked } from 'viem'
 import { PoolType, StablePool, V3Pool, Currency, RouteType, SwapSection, PSMPool, HTXSunPool } from '../types'
+import { nextCurrency } from './routePath'
 
 export function encodeV1RouteToPath(section: SwapSection): Hex[] {
   if (section.type !== RouteType.V1) {
@@ -19,12 +20,8 @@ export function encodeV2RouteToPath(section: SwapSection): Hex[] {
 
   const path = [input]
 
-  let fromIndex = 0
   for (const pool of section.pools) {
-    const from = path[fromIndex]
-    const to = pool.currency0.Equal(from) ? pool.currency1 : pool.currency0
-    path.push(to)
-    fromIndex = path.length - 1
+    path.push(nextCurrency(pool, path[path.length - 1]))
   }
 
   // confirm the last currency is the output
@@ -35,7 +32,7 @@ export function encodeV2RouteToPath(section: SwapSection): Hex[] {
   return path.map(currency => currency.hex)
 }
 
-export function encodeV3RouteToPath(section: SwapSection): {
+export function encodeV3RouteToPath(section: SwapSection, exactOutput = false): {
   encodedPath: Hex
   path: (number | string)[]
   types: string[]
@@ -53,9 +50,7 @@ export function encodeV3RouteToPath(section: SwapSection): {
   let inputToken = section.currencyInput
 
   for (let i = 0; i < section.pools.length; i++) {
-    const outputToken = section.pools[i].currency0.Equal(inputToken)
-      ? section.pools[i].currency1
-      : section.pools[i].currency0
+    const outputToken = nextCurrency(section.pools[i], inputToken)
 
     const fee = (section.pools[i] as V3Pool).fee
     if (i === 0) {
@@ -77,7 +72,10 @@ export function encodeV3RouteToPath(section: SwapSection): {
     throw new Error('The last currency is not the output')
   }
 
-  // const encodedPath = section.isExactOutput ? encodePacked(types.reverse(), path.reverse()) : encodePacked(types, path)
+  if (exactOutput) {
+    types.reverse()
+    path.reverse()
+  }
   const encodedPath = encodePacked(types, path)
   return { encodedPath, path, types }
 }
@@ -91,17 +89,13 @@ export function encodeStableRouteToPathAndFlags(section: SwapSection): { path: H
 
   const path: Currency[] = [input]
   const flags: bigint[] = []
-  let fromIndex = 0
   for (let pool of section.pools) {
     pool = pool as StablePool
     if (pool.type !== PoolType.STABLE) {
       throw new Error('Pool must be a Stable pool')
     }
-    const from = path[fromIndex]
-    const to = pool.currency0.Equal(from) ? pool.currency1 : pool.currency0
-    path.push(to)
+    path.push(nextCurrency(pool, path[path.length - 1]))
     flags.push(BigInt(pool.flag))
-    fromIndex = path.length - 1
   }
 
   // confirm the last currency is the output
@@ -122,17 +116,13 @@ export function encodePSMSwapToPathAndFlags(section: SwapSection): { path: Hex[]
 
   const path: Currency[] = [input]
   const flags: bigint[] = []
-  let fromIndex = 0
   for (let pool of section.pools) {
     pool = pool as PSMPool
     if (pool.type !== PoolType.PSM) {
       throw new Error('Pool must be a PSM pool')
     }
-    const from = path[fromIndex]
-    const to = pool.currency0.Equal(from) ? pool.currency1 : pool.currency0
-    path.push(to)
+    path.push(nextCurrency(pool, path[path.length - 1]))
     flags.push(BigInt(pool.flag))
-    fromIndex = path.length - 1
   }
 
   // confirm the last currency is the output
@@ -152,17 +142,13 @@ export function encodeHTXSunSwapToPathAndFlags(section: SwapSection): { path: He
 
   const path: Currency[] = [input]
   const flags: bigint[] = []
-  let fromIndex = 0
   for (let pool of section.pools) {
     pool = pool as HTXSunPool
     if (pool.type !== PoolType.HTX_SUN) {
       throw new Error('Pool must be a HTX Sun pool')
     }
-    const from = path[fromIndex]
-    const to = pool.currency0.Equal(from) ? pool.currency1 : pool.currency0
-    path.push(to)
+    path.push(nextCurrency(pool, path[path.length - 1]))
     flags.push(BigInt(pool.flag))
-    fromIndex = path.length - 1
   }
 
   // confirm the last currency is the output

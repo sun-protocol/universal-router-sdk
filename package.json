@@ -16,6 +16,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:contracts": "npm run build && node tests/contracts/run.cjs",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "publish:beta": "npm publish --tag beta --access public",
