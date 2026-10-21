@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { parseRouteAPIResponse } from './parseRouteAPIResponse'
-import type { RouteData } from '../types/routeAPI'
+import type { ExactInRouteData } from '../types/routeAPI'
 
 const TOKEN_A = '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'
 const TOKEN_B = '0xc9004f0a5bb2c6b15b10a0628c99d7fdeaf7bf60'
 
-function minimalRouteData(overrides: Partial<RouteData> = {}): RouteData {
+function minimalRouteData(overrides: Partial<ExactInRouteData> = {}): ExactInRouteData {
   return {
     amountIn: '0',
     amountInRaw: '0',

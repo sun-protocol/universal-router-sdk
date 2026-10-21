@@ -139,7 +139,7 @@ export class ActionsPlanner {
   public finalizeSwap(inputCurrency: Address, outputCurrency: Address, takeRecipient: Address) {
     if (isAddressEqual(takeRecipient, ACTION_CONSTANTS.MSG_SENDER)) {
       this.add(ACTIONS.SETTLE_ALL, [inputCurrency, maxUint256])
-      this.add(ACTIONS.TAKE_ALL, [outputCurrency, 0n])
+      this.add(ACTIONS.TAKE_ALL, [outputCurrency, takeRecipient, 0n])
     } else {
       this.add(ACTIONS.SETTLE, [inputCurrency, ACTION_CONSTANTS.OPEN_DELTA, true])
       this.add(ACTIONS.TAKE, [outputCurrency, takeRecipient, ACTION_CONSTANTS.OPEN_DELTA])

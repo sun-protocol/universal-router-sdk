@@ -1,6 +1,6 @@
 {
   "name": "@sun-protocol/universal-router-sdk",
-  "version": "1.1.1",
+  "version": "1.2.0-beta.1",
   "description": "Universal Router SDK for TypeScript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,6 +16,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:contracts": "npm run build && node tests/contracts/run.cjs",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "publish:beta": "npm publish --tag beta --access public",
