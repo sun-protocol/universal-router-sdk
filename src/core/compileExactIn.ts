@@ -169,6 +169,9 @@ export class ExactInCompiler {
       this.debugLog('WRAP_ETH', { recipient, amountIn })
       this.addCommand(CommandType.WRAP_ETH, [recipient, amountIn])
     } else {
+      if (this.getPayerIsUser(section)) {
+        addPermit2TransferFrom(this.writer, section.currencyInput, ADDRESS_THIS, plan.amountIn)
+      }
       this.debugLog('UNWRAP_WETH', { recipient, amountOutMinimum })
       this.addCommand(CommandType.UNWRAP_WETH, [recipient, amountOutMinimum])
     }
