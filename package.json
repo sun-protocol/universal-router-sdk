@@ -46,9 +46,8 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@pancakeswap/swap-sdk-core": "^1.1.0",
-    "@sun-protocol/permit2-sdk": "^1.0.0",
-    "viem": "^2.37.5"
+    "tiny-invariant": "^1.3.3",
+    "viem": "^2.57.18"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
