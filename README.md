@@ -10,7 +10,7 @@ npm install @sun-protocol/universal-router-sdk
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js `^22.23.4 || ^24.22.1 || >=26.12.1` for the TronWeb 6.5.2 dependency tree and examples
 - TypeScript >= 5.0
 
 ## Quick Start
