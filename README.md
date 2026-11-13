@@ -10,7 +10,7 @@ npm install @sun-protocol/universal-router-sdk
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js `^22.23.4 || ^24.22.1 || >=26.12.1` for the TronWeb 6.5.2 dependency tree and examples
 - TypeScript >= 5.0
 
 ## Quick Start
@@ -63,7 +63,7 @@ The main class that converts swap routes into Universal Router commands.
 
 ```typescript
 const planner = new TradePlanner(
-  routes,       // SwapTradeRoute[] — one or more swap routes
+  routes,       // SwapTradeRoute[] — exactly one swap route
   debugMode,    // boolean (default: false) — log encoding details
   options       // SwapExecutionOptions (optional)
 )
@@ -84,11 +84,17 @@ const planner = new TradePlanner([route], false, {
     permit: permit2Signature, // Permit2Signature
   },
   tradeSpiltOptions: {
-    enable: true,             // Enable split routing
-    oneShotTransfer: true,    // Batch transfer for split routes
+    enable: false,            // Multiple routes are temporarily unsupported
+    oneShotTransfer: false,   // Must be false; true is temporarily unsupported
   },
 })
 ```
+
+`TradePlanner` currently rejects an empty route list, multiple routes, and
+`oneShotTransfer: true`. The split flag does not bypass the single-route restriction.
+For a route starting with WTRX → TRX, the planner transfers `amountIn` WTRX from
+the user to the router before unwrapping. Input referral already provides this
+transfer and does not add a second one. Valid Permit2 authorization is still required.
 
 ### `parseRouteAPIResponse`
 

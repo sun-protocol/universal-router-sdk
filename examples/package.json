@@ -5,13 +5,17 @@
   "license": "ISC",
   "author": "",
   "type": "commonjs",
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+  },
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@sun-protocol/permit2-sdk": "^1.0.0",
-    "@sun-protocol/universal-router-sdk": "file:.."
+    "@sun-protocol/permit2-sdk": "^1.0.1",
+    "@sun-protocol/universal-router-sdk": "file:..",
+    "tronweb": "^6.5.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
