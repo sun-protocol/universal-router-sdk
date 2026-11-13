@@ -82,7 +82,9 @@ export interface PermitOptions {
 }
 
 export interface TradeSpiltOptions {
+  /** Reserved split flag. TradePlanner currently accepts exactly one route regardless of this flag. */
   enable: boolean
+  /** Temporarily unsupported when true. Omit or set to false. */
   oneShotTransfer: boolean
 }
 

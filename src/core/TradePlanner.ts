@@ -43,6 +43,15 @@ function debugJsonReplacer(_key: string, value: unknown): unknown {
   return value
 }
 
+function validateSupportedExecution(routeCount: number, options?: SwapExecutionOptions): void {
+  if (routeCount !== 1) {
+    throw new Error('TradePlanner currently supports exactly one route; multiple plans are temporarily disabled')
+  }
+  if (options?.tradeSpiltOptions?.oneShotTransfer) {
+    throw new Error('oneShotTransfer is temporarily disabled; use a single route with oneShotTransfer=false')
+  }
+}
+
 export class TradePlanner extends RoutePlanner {
   private context: SwapExecutionContext
   private debugMode: boolean
@@ -63,6 +72,8 @@ export class TradePlanner extends RoutePlanner {
     }
   ) {
     super()
+
+    validateSupportedExecution(routes.length, options)
 
     this.context = {
       plans: [],
@@ -100,9 +111,8 @@ export class TradePlanner extends RoutePlanner {
   }
 
   private encodeInner(): void {
-    if (this.context.plans.length === 0) {
-      throw new Error('No plans to encode')
-    }
+    // Options are retained by reference, so recheck before emitting any commands.
+    validateSupportedExecution(this.context.plans.length, this.context.options)
 
     const referral = this.context.options?.referralOptions
     const isOneShotTransfer = this.context.options?.tradeSpiltOptions?.oneShotTransfer ?? false
@@ -132,6 +142,11 @@ export class TradePlanner extends RoutePlanner {
         // No referral, or Case 4: non-oneShotTransfer + output deduction
         for (const plan of this.context.plans) {
           if (plan.sections.length === 0) throw new Error('No sections to encode')
+          // UNWRAP_WETH only spends the router's WTRX; it cannot pull user funds.
+          // The input-referral branch above already performs this transfer.
+          if (plan.sections[0].type === RouteType.WTRX && !plan.input.isNative) {
+            this.addPermit2TransferFrom(plan.input, ADDRESS_THIS, plan.amountIn)
+          }
           for (const section of plan.sections) {
             this.addSwap(plan, section)
           }
