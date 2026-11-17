@@ -6,13 +6,11 @@ export interface PoolKey {
   parameters: string
 }
 
-export interface RouteData {
+interface BaseRouteData {
   amountIn: string
   amountInRaw: string
   amountOut: string
   amountOutRaw: string
-  amountOutMinimum: string
-  amountOutMinimumRaw: string
   inUsd: string
   outUsd: string
   impact: string
@@ -27,6 +25,23 @@ export interface RouteData {
   amountInReferralBips?: number
   amountOutReferralBips?: number
 }
+
+/** Exact-In quote. QS may omit tradeType for this response shape. */
+export interface ExactInRouteData extends BaseRouteData {
+  tradeType?: 'EXACT_IN'
+  amountOutMinimum: string
+  amountOutMinimumRaw: string
+}
+
+/** Exact-Out quote. */
+export interface ExactOutRouteData extends BaseRouteData {
+  tradeType: 'EXACT_OUT'
+  amountInMaximum: string
+  amountInMaximumRaw: string
+  grossAmountOutRaw: string
+}
+
+export type RouteData = ExactInRouteData | ExactOutRouteData
 
 export interface RouterAPIResponse {
   code: number
