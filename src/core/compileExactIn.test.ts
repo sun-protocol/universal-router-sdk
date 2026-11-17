@@ -50,21 +50,23 @@ describe('Exact-In WTRX funding', () => {
     expect(commands[0].args).toEqual([getAddress(route.input.hex), ADDRESS_THIS.hex, route.amountIn])
   })
 
-  it.each(['oneShotTransfer', 'inputReferral'] as const)(
-    'does not pull WTRX twice when funded by %s', mode => {
-      const options: SwapExecutionOptions = mode === 'oneShotTransfer'
-        ? { tradeSpiltOptions: { oneShotTransfer: true } }
-        : { referralOptions: { mode: 'input', projectAddress, bps: 100 } }
-      const commands = encode(entryUnwrap(MAINNET_WTRX_ADDRESS), options)
-      expect(commands.filter(command => command.type === CommandType.PERMIT2_TRANSFER_FROM))
-        .toEqual([{ type: CommandType.PERMIT2_TRANSFER_FROM,
-          args: [getAddress(MAINNET_WTRX_ADDRESS.hex), ADDRESS_THIS.hex, 1_000_000n] }])
-      expect(commands.map(command => command.type).slice(0, mode === 'inputReferral' ? 3 : 2))
-        .toEqual(mode === 'inputReferral'
-          ? [CommandType.PERMIT2_TRANSFER_FROM, CommandType.PAY_REFERRAL, CommandType.UNWRAP_WETH]
-          : [CommandType.PERMIT2_TRANSFER_FROM, CommandType.UNWRAP_WETH])
+  it('rejects oneShotTransfer before funding an entry unwrap', () => {
+    expect(() => encode(entryUnwrap(MAINNET_WTRX_ADDRESS), {
+      tradeSpiltOptions: { enable: false, oneShotTransfer: true },
+    })).toThrow('oneShotTransfer')
+  })
+
+  it('does not pull WTRX twice when funded by input referral', () => {
+    const options: SwapExecutionOptions = {
+      referralOptions: { mode: 'input', projectAddress, bps: 100 },
     }
-  )
+    const commands = encode(entryUnwrap(MAINNET_WTRX_ADDRESS), options)
+    expect(commands.filter(command => command.type === CommandType.PERMIT2_TRANSFER_FROM))
+      .toEqual([{ type: CommandType.PERMIT2_TRANSFER_FROM,
+        args: [getAddress(MAINNET_WTRX_ADDRESS.hex), ADDRESS_THIS.hex, 1_000_000n] }])
+    expect(commands.map(command => command.type).slice(0, 3))
+      .toEqual([CommandType.PERMIT2_TRANSFER_FROM, CommandType.PAY_REFERRAL, CommandType.UNWRAP_WETH])
+  })
 
   it('still funds an entry unwrap with output referral', () => {
     const commands = encode(entryUnwrap(MAINNET_WTRX_ADDRESS), {

@@ -219,11 +219,6 @@ npm run test         # Run tests
 
 MIT
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the internal development and public release model,
-GitHub release synchronization, review requirements, and validation guidance.
-
 ### V1 Exact-Out contract compatibility
 
 V1 Exact-Out requires the Router implementation at `4fbc87557dcddbe3031409ab65561035eb292ac6`
@@ -242,3 +237,8 @@ swept to recipient after output distribution. Output referral is charged before 
 net-target SWEEP, followed by an input refund SWEEP with minimum zero. Input referral
 remains unsupported. V1 evidence uses actual Router/Permit2 with controlled exchanges
 that transfer actual input and output, not deployed production pools.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the internal development and public release model,
+GitHub release synchronization, review requirements, and validation guidance.

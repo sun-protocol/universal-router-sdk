@@ -253,13 +253,19 @@ describe('Exact-Out commands and payments', () => {
     }
   })
 
-  it.each(exactInFixtures)('preserves the pre-change Exact-In bytes: $name', fixture => {
+  it.each(exactInFixtures.filter(fixture => !fixture.split))('preserves the pre-change Exact-In bytes: $name', fixture => {
     const route = parseRouteAPIResponse(fixture.data, false)
-    const planner = new TradePlanner(fixture.split ? [route, route] : [route], false,
+    const planner = new TradePlanner([route], false,
       fixture.options as ConstructorParameters<typeof TradePlanner>[2])
     planner.encode()
     expect(keccak256(encodeAbiParameters(parseAbiParameters('bytes,bytes[]'), [planner.commands, planner.inputs])))
       .toBe(fixture.hash)
+  })
+
+  it.each(exactInFixtures.filter(fixture => fixture.split))('rejects unsupported split Exact-In routes: $name', fixture => {
+    const route = parseRouteAPIResponse(fixture.data, false)
+    expect(() => new TradePlanner([route, route], false,
+      fixture.options as ConstructorParameters<typeof TradePlanner>[2])).toThrow('exactly one route')
   })
   it('V2 pulls actual input subject to max and sweeps the net target', () => {
     const planner = encode()
